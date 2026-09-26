@@ -1,0 +1,44 @@
+# guitarz — project conventions
+
+Conductor-view Guitar Pro player: FastAPI backend (file explorer + static serving),
+vanilla-JS frontend on alphaTab (score rendering + SoundFont playback).
+
+## Commands
+
+```bash
+.venv/bin/pip install -e ".[dev]"      # install with test dependencies
+.venv/bin/pytest                       # full suite (browser smoke auto-skips without Chrome)
+.venv/bin/pytest -m "not browser"      # fast unit loop for red-green cycles
+.venv/bin/guitarz --root <dir>         # run the app at http://127.0.0.1:8008
+./scripts/fetch_vendor.sh              # (re)download alphaTab assets into static/vendor/
+```
+
+## Convention 1: TDD — non-negotiable
+
+- **Write the failing test first.** No production code change without a test that
+  demanded it: red → green → refactor.
+- **Bugfixes start with a regression test** that reproduces the bug, then the fix.
+- **New endpoints/behaviors**: spec them as tests in `tests/` before implementing.
+- **Frontend changes**: covered by the headless-Chrome smoke test
+  (`tests/test_browser_smoke.py`, marker `browser`). Extend it when adding UI
+  behavior; it drives the real app over the Chrome DevTools Protocol.
+- Run the full suite before any commit; all tests green.
+
+## Convention 2: verbose docstrings — every function
+
+- **Python**: Google style on every module, function, and method — one-line summary,
+  a paragraph of rationale (the *why*, constraints, non-obvious behavior), then
+  `Args:` / `Returns:` / `Raises:` as applicable. Test functions get docstrings
+  stating the behavior they pin down.
+- **JavaScript**: JSDoc block on every function — summary, rationale, `@param` /
+  `@returns` as applicable.
+
+## Layout
+
+- `guitarz/server.py` — FastAPI app factory (`create_app`), `/api/browse`, `/api/file`,
+  path-traversal guard, `EXTENSIONS` allowlist
+- `guitarz/__main__.py` — CLI entry point
+- `static/js/` — `app.js` (boot), `explorer.js` (file tree), `conductor.js`
+  (alphaTab + track rail), `transport.js` (playback controls)
+- `tests/` — pytest suite; `conftest.py` holds the tmp-root and live-server fixtures
+- `static/vendor/` — fetched alphaTab assets, never hand-edited, gitignored

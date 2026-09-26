@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guitarz — conductor view</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header id="transport">
+  <span id="logo">guitarz</span>
+  <button id="btn-play" class="tbtn big" title="Play / pause (space)" disabled>&#9654;</button>
+  <button id="btn-stop" class="tbtn" title="Stop" disabled>&#9632;</button>
+  <button id="btn-countin" class="tbtn toggle on" title="One-bar count-in before playback">1·2·3·4</button>
+  <button id="btn-tails" class="tbtn toggle" title="Show rhythm stems and beams (tails) under the tablature">tails</button>
+  <button id="btn-loop" class="tbtn toggle" title="Loop the selected bar range (drag on the score to select)">loop</button>
+  <button id="btn-clearloop" class="tbtn" title="Clear the loop selection">&#10005; loop</button>
+  <label id="speed-wrap" title="Playback speed">
+    <input id="speed" type="range" min="25" max="125" step="5" value="100">
+    <span id="speed-val">100%</span>
+  </label>
+  <span id="transpose-wrap" title="Transpose playback in semitones (tab stays as written; drums unaffected)">
+    <button id="btn-transpose-down" class="tbtn step" title="Down one semitone">&#8722;</button>
+    <span id="transpose-val" title="Click to reset to original key">+0</span>
+    <button id="btn-transpose-up" class="tbtn step" title="Up one semitone">+</button>
+  </span>
+  <div id="position">
+    <span id="pos-bar">bar –</span>
+    <span id="pos-time">0:00 / 0:00</span>
+    <div id="progress"><div id="progress-fill"></div></div>
+  </div>
+  <span id="song-title"></span>
+</header>
+
+<div id="main">
+  <aside id="sidebar">
+    <section id="explorer">
+      <h2>Files</h2>
+      <nav id="breadcrumb"></nav>
+      <ul id="filelist"></ul>
+    </section>
+    <section id="trackrail">
+      <h2>Tracks</h2>
+      <div id="tracks"><p class="hint">Load a song to see its tracks.</p></div>
+    </section>
+  </aside>
+  <main id="viewport">
+    <div id="alphatab"></div>
+    <div id="overlay"><div id="overlay-msg">Select a Guitar Pro file to begin.</div></div>
+  </main>
+</div>
+
+<script src="/vendor/alphatab/alphaTab.min.js"></script>
+<script src="/js/explorer.js"></script>
+<script src="/js/conductor.js"></script>
+<script src="/js/transport.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
