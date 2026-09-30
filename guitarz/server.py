@@ -1,8 +1,8 @@
 """FastAPI backend for guitarz.
 
 Serves two things: a small JSON API that lets the frontend browse a
-configurable "music root" directory for Guitar Pro files, and the static web
-app itself. The score never touches Python — files are shipped as raw bytes to
+configurable "music root" directory for Guitar Pro files (plus a catalog of
+the playback SoundFonts), and the static web app itself. The score never touches Python — files are shipped as raw bytes to
 the browser, where alphaTab parses and renders them — so this module's whole
 job is careful filesystem exposure: only allowed extensions, only inside the
 root, hidden entries excluded.
@@ -11,6 +11,7 @@ root, hidden entries excluded.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -26,8 +27,31 @@ EXTENSIONS = {".gp", ".gp3", ".gp4", ".gp5"}
 #: directory.
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
+#: Where the playback SoundFonts live (fetched by scripts/fetch_vendor.sh).
+#: Inside the static tree on purpose: the existing static mount already serves
+#: them, so the catalog endpoint only has to describe files, never stream them.
+SOUNDFONT_DIR = STATIC_DIR / "vendor" / "alphatab" / "soundfont"
 
-def create_app(root: Path) -> FastAPI:
+#: URL prefix at which the static mount exposes :data:`SOUNDFONT_DIR`.
+SOUNDFONT_URL_PREFIX = "/vendor/alphatab/soundfont/"
+
+#: SoundFont formats alphaTab's synth reads (.sf3 = Vorbis-compressed samples).
+SOUNDFONT_EXTENSIONS = {".sf2", ".sf3"}
+
+#: Default-font preference order: the richer MuseScore General first, then the
+#: tiny sonivox font that alphaTab ships and fetch_vendor.sh always downloads.
+DEFAULT_SOUNDFONTS = ("MuseScore_General.sf3", "sonivox.sf2")
+
+#: Curated menu labels for the fonts fetch_vendor.sh installs; any other font
+#: dropped into the folder is labeled by its file stem.
+SOUNDFONT_LABELS = {
+    "MuseScore_General.sf3": "MuseScore General",
+    "GeneralUser-GS.sf2": "GeneralUser GS",
+    "sonivox.sf2": "Sonivox (light)",
+}
+
+
+def create_app(root: Path, soundfont_dir: Path | None = None) -> FastAPI:
     """Build the FastAPI application serving one music-root directory.
 
     An app-factory (rather than a module-level app) so tests can spin up
@@ -37,12 +61,16 @@ def create_app(root: Path) -> FastAPI:
 
     Args:
         root: directory whose Guitar Pro files the app may expose. Must exist.
+        soundfont_dir: folder scanned by ``/api/soundfonts``; defaults to
+            :data:`SOUNDFONT_DIR`. Injectable so tests can build catalogs
+            without touching the real vendored fonts.
 
     Returns:
-        A configured FastAPI instance with ``/api/browse``, ``/api/file`` and
-        the static frontend mounted at ``/``.
+        A configured FastAPI instance with ``/api/browse``, ``/api/file``,
+        ``/api/soundfonts`` and the static frontend mounted at ``/``.
     """
     root = root.resolve()
+    sf_dir = soundfont_dir if soundfont_dir is not None else SOUNDFONT_DIR
     app = FastAPI(title="guitarz")
 
     def resolve_safe(rel: str) -> Path:
@@ -136,6 +164,45 @@ def create_app(root: Path) -> FastAPI:
         if not target.is_file() or target.suffix.lower() not in EXTENSIONS:
             raise HTTPException(status_code=404, detail="file not found")
         return FileResponse(target, media_type="application/octet-stream", filename=target.name)
+
+    @app.get("/api/soundfonts")
+    def soundfonts() -> dict:
+        """Describe the SoundFonts available for playback, plus the default.
+
+        Feeds the transport's SoundFont menu. The folder is scanned on every
+        request (it holds a handful of files) so fonts added or removed while
+        the server runs are reflected on the next page load. Only visible
+        ``.sf2``/``.sf3`` files count — the LICENSE files shipped alongside
+        the fonts must not become menu entries. A missing folder (vendor
+        assets never fetched) is an empty catalog rather than an error, so the
+        frontend can still fall back to its built-in path.
+
+        Returns:
+            ``{"default": <file name or None>, "fonts": [{file, label, url}]}``
+            with fonts sorted case-insensitively by label. ``default`` is the
+            first :data:`DEFAULT_SOUNDFONTS` entry present, else the first
+            listed font, else ``None``.
+        """
+        fonts = []
+        if sf_dir.is_dir():
+            for entry in sf_dir.iterdir():
+                if (
+                    entry.name.startswith(".")
+                    or not entry.is_file()
+                    or entry.suffix.lower() not in SOUNDFONT_EXTENSIONS
+                ):
+                    continue
+                fonts.append(
+                    {
+                        "file": entry.name,
+                        "label": SOUNDFONT_LABELS.get(entry.name, entry.stem),
+                        "url": SOUNDFONT_URL_PREFIX + quote(entry.name),
+                    }
+                )
+        fonts.sort(key=lambda f: f["label"].lower())
+        names = [f["file"] for f in fonts]
+        default = next((n for n in DEFAULT_SOUNDFONTS if n in names), names[0] if names else None)
+        return {"default": default, "fonts": fonts}
 
     @app.middleware("http")
     async def demand_revalidation(request, call_next):

@@ -73,6 +73,20 @@ html, body {
 }
 #transpose-val.active { color: var(--accent); font-weight: 700; }
 
+#soundfont {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 13px;
+  max-width: 170px;
+  cursor: pointer;
+}
+#soundfont:hover:not(:disabled),
+#soundfont:focus { border-color: var(--accent); outline: none; }
+#soundfont:disabled { opacity: 0.4; cursor: default; }
+
 #position {
   display: flex;
   align-items: center;

@@ -90,13 +90,17 @@
    * them; display.resources recolors the score for the dark theme;
    * rhythmMode adds stems/beams below tab staves, without which tab-only
    * notation loses all timing information; the viewport element is handed to
-   * the player for cursor auto-scroll.
+   * the player for cursor auto-scroll. The SoundFont is chosen by the caller
+   * (app.js resolves the saved menu choice or the server default) so the
+   * synth boots straight into the right font instead of loading one and
+   * immediately swapping it.
    *
+   * @param {string} soundFontUrl - URL of the SoundFont (.sf2/.sf3) to boot with.
    * @returns {object|null} the AlphaTabApi instance, or null when the
    *          vendored alphaTab bundle is missing (a setup error, reported on
    *          the overlay rather than thrown).
    */
-  function init() {
+  function init(soundFontUrl) {
     if (typeof alphaTab === "undefined") {
       overlay("alphaTab assets missing — run scripts/fetch_vendor.sh and reload.");
       return null;
@@ -127,7 +131,7 @@
       },
       player: {
         enablePlayer: true,
-        soundFont: "/vendor/alphatab/soundfont/sonivox.sf2",
+        soundFont: soundFontUrl,
         scrollElement: viewport,
         scrollOffsetY: -60,
       },

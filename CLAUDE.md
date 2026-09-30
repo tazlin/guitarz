@@ -36,9 +36,11 @@ vanilla-JS frontend on alphaTab (score rendering + SoundFont playback).
 ## Layout
 
 - `guitarz/server.py` — FastAPI app factory (`create_app`), `/api/browse`, `/api/file`,
-  path-traversal guard, `EXTENSIONS` allowlist
+  path-traversal guard, `EXTENSIONS` allowlist, `/api/soundfonts` catalog (scans
+  `static/vendor/alphatab/soundfont/`; default preference in `DEFAULT_SOUNDFONTS`)
 - `guitarz/__main__.py` — CLI entry point
-- `static/js/` — `app.js` (boot), `explorer.js` (file tree), `conductor.js`
-  (alphaTab + track rail), `transport.js` (playback controls)
+- `static/js/` — `app.js` (boot; resolves the SoundFont before alphaTab init),
+  `explorer.js` (file tree), `conductor.js` (alphaTab + track rail), `transport.js`
+  (playback controls + SoundFont menu)
 - `tests/` — pytest suite; `conftest.py` holds the tmp-root and live-server fixtures
 - `static/vendor/` — fetched alphaTab assets, never hand-edited, gitignored

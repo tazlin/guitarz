@@ -24,9 +24,43 @@
   const posTime = document.getElementById("pos-time");
   const progress = document.getElementById("progress");
   const progressFill = document.getElementById("progress-fill");
+  const soundfontSel = document.getElementById("soundfont");
+
+  /** localStorage key remembering the viewer's SoundFont menu choice. */
+  const SOUNDFONT_KEY = "guitarz.soundfont";
 
   let api = null;
   let endTime = 0;
+
+  /**
+   * Read the saved SoundFont choice, if any.
+   *
+   * Storage can be unavailable (private windows, blocked site data) and then
+   * throws on access; the menu choice is a convenience, so any failure simply
+   * means "no saved choice" and the server default is used.
+   *
+   * @returns {string|null} the saved font file name, or null.
+   */
+  function savedSoundFont() {
+    try {
+      return localStorage.getItem(SOUNDFONT_KEY);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Remember the SoundFont choice for the next page load (best effort).
+   *
+   * @param {string} file - font file name as listed by /api/soundfonts.
+   */
+  function saveSoundFont(file) {
+    try {
+      localStorage.setItem(SOUNDFONT_KEY, file);
+    } catch (e) {
+      /* storage unavailable: the choice just won't survive a reload */
+    }
+  }
 
   /**
    * Format milliseconds as m:ss for the time readout.
@@ -51,10 +85,14 @@
    *
    * @param {object|null} alphaTabApi - instance from Guitarz.conductor.init();
    *        null (vendor assets missing) leaves the transport inert.
+   * @param {Array<{file: string, label: string, url: string}>} fonts - the
+   *        /api/soundfonts catalog for the SoundFont menu (may be empty).
+   * @param {string|null} selectedFont - file name the synth booted with.
    */
-  function init(alphaTabApi) {
+  function init(alphaTabApi, fonts, selectedFont) {
     api = alphaTabApi;
     if (!api) return;
+    initSoundFontMenu(fonts || [], selectedFont);
 
     api.countInVolume = 1; // count-in on by default (button starts lit)
 
@@ -148,5 +186,92 @@
     });
   }
 
-  Guitarz.transport = { init };
+  /**
+   * Fill the SoundFont menu and wire live font switching.
+   *
+   * Switching swaps the synth's instrument samples in place: playback is
+   * stopped first (a font change mid-note would glitch), the transport is
+   * locked while the new font downloads and decodes (MuseScore General is
+   * ~38 MB), and resetSoundFonts() precedes the load so the fonts replace
+   * rather than layer. The loaded song, loop range, speed and transpose all
+   * survive because they live on the api/score, not in the synth's font
+   * bank. The choice is saved only once the font has actually loaded; if the
+   * load fails (alphaTab reports it via api.error, which the conductor shows
+   * on the overlay), the previous font is reloaded and reselected so the
+   * player is never left without instruments.
+   *
+   * The menu stays disabled when the catalog is empty and until the boot
+   * font is ready, so a switch can't race the initial load.
+   *
+   * @param {Array<{file: string, label: string, url: string}>} fonts - catalog.
+   * @param {string|null} selected - file name the synth booted with.
+   */
+  function initSoundFontMenu(fonts, selected) {
+    soundfontSel.innerHTML = "";
+    for (const font of fonts) {
+      const opt = document.createElement("option");
+      opt.value = font.file;
+      opt.textContent = font.label;
+      soundfontSel.appendChild(opt);
+    }
+    if (!fonts.length) return;
+    if (selected) soundfontSel.value = selected;
+
+    let current = selected; // font the synth is known to hold
+    let pending = null; // font being switched to, null when idle
+
+    /**
+     * Lock or unlock the controls that must not be used mid-switch.
+     *
+     * @param {boolean} busy - true while a font is loading.
+     */
+    function setSwitching(busy) {
+      soundfontSel.disabled = busy;
+      btnPlay.disabled = busy;
+      btnStop.disabled = busy;
+    }
+
+    /**
+     * Start loading one catalog font into the synth, replacing the current one.
+     *
+     * @param {string} file - catalog file name to load.
+     */
+    function loadFont(file) {
+      const font = fonts.find((f) => f.file === file);
+      if (!font) return;
+      pending = file;
+      setSwitching(true);
+      api.stop();
+      api.resetSoundFonts();
+      api.loadSoundFont(font.url, false);
+    }
+
+    api.playerReady.on(() => {
+      if (pending === null) soundfontSel.disabled = false;
+    });
+
+    api.soundFontLoaded.on(() => {
+      if (pending === null) return; // the boot font; playerReady handles it
+      current = pending;
+      pending = null;
+      saveSoundFont(current);
+      setSwitching(false);
+    });
+
+    api.error.on(() => {
+      if (pending === null) return;
+      const failed = pending;
+      pending = null;
+      soundfontSel.value = current;
+      if (current && current !== failed) {
+        loadFont(current); // restore a working font
+      } else {
+        setSwitching(false);
+      }
+    });
+
+    soundfontSel.onchange = () => loadFont(soundfontSel.value);
+  }
+
+  Guitarz.transport = { init, savedSoundFont };
 })();

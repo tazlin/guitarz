@@ -508,6 +508,88 @@ def test_global_transpose_stepper(live_server):
     asyncio.run(scenario())
 
 
+def test_soundfont_menu_switches_and_persists(live_server):
+    """The transport's SoundFont menu mirrors the catalog, switches live, and persists.
+
+    Spec: (1) the menu's options are exactly the ``/api/soundfonts`` catalog,
+    in order; (2) a fresh browser profile starts on the server's default font
+    and that font's URL is what alphaTab was configured with; (3) choosing
+    another font reloads the synth in place — ``soundFontLoaded`` fires, play
+    re-enables, and playback really advances; (4) the choice is saved and
+    survives a page reload. The switch targets ``sonivox.sf2`` because
+    fetch_vendor.sh always installs it, so the test holds on machines that
+    have not downloaded the large optional fonts.
+    """
+
+    async def scenario():
+        async with chrome_page(_song_url(live_server)) as cdp:
+            await wait_ready(cdp)
+            raw = await cdp.js("""(async () => {
+                const cat = await (await fetch('/api/soundfonts')).json();
+                const sel = document.getElementById('soundfont');
+                return JSON.stringify({
+                    cat,
+                    options: [...sel.options].map(o => o.value),
+                    selected: sel.value,
+                    configured: Guitarz.conductor.state.api.settings.player.soundFont});
+            })()""")
+            data = json.loads(raw)
+            cat = data["cat"]
+            assert data["options"] == [f["file"] for f in cat["fonts"]], (
+                f"menu must mirror the catalog: {data}"
+            )
+            assert "sonivox.sf2" in data["options"], f"sonivox must be offered: {data}"
+            assert data["selected"] == cat["default"], (
+                f"fresh profile must start on the server default: {data}"
+            )
+            default_url = next(f["url"] for f in cat["fonts"] if f["file"] == cat["default"])
+            assert data["configured"] == default_url, (
+                f"alphaTab must be configured with the default font: {data}"
+            )
+
+            # Switch to sonivox and wait for the synth to finish reloading.
+            await cdp.js("""(() => {
+                window.__sfLoaded = false;
+                Guitarz.conductor.state.api.soundFontLoaded.on(() => { window.__sfLoaded = true; });
+                const sel = document.getElementById('soundfont');
+                sel.value = 'sonivox.sf2';
+                sel.dispatchEvent(new Event('change'));
+            })()""")
+            ready = None
+            for _ in range(40):
+                await asyncio.sleep(1.5)
+                ready = json.loads(await cdp.js("""JSON.stringify({
+                    loaded: window.__sfLoaded,
+                    playEnabled: !document.getElementById('btn-play').disabled,
+                    menuEnabled: !document.getElementById('soundfont').disabled})"""))
+                if all(ready.values()):
+                    break
+            assert ready and all(ready.values()), f"font switch never completed: {ready}"
+            saved = await cdp.js("localStorage.getItem('guitarz.soundfont')")
+            assert saved == "sonivox.sf2", f"choice must be saved: {saved}"
+
+            await cdp.js("document.getElementById('btn-play').click()", gesture=True)
+            await asyncio.sleep(8)  # count-in bar + a couple seconds of song
+            state = await cdp.js("Guitarz.conductor.state.api.playerState")
+            pos = await cdp.js("document.getElementById('pos-time').textContent")
+            assert state == 1, f"player not Playing after font switch: {state}"
+            assert not pos.startswith("0:00 /"), f"position never advanced: {pos}"
+            await cdp.js("document.getElementById('btn-stop').click()")
+
+            # Reload: the saved choice wins over the server default.
+            await cdp.send("Page.reload")
+            await wait_ready(cdp)
+            after = json.loads(await cdp.js("""JSON.stringify({
+                selected: document.getElementById('soundfont').value,
+                configured: Guitarz.conductor.state.api.settings.player.soundFont})"""))
+            assert after["selected"] == "sonivox.sf2", f"choice must persist: {after}"
+            assert after["configured"].endswith("/sonivox.sf2"), (
+                f"alphaTab must boot with the saved font: {after}"
+            )
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.skipif(LYRIC_GP is None, reason="no lyric-bearing .gp song found in repo")
 def test_hiding_vocal_track_keeps_lyrics_visible(live_server):
     """Hiding a lyric-bearing track moves its lyrics onto a visible track.

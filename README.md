@@ -21,6 +21,11 @@ hardware or drivers needed.
 - **Transpose** — shift playback up to ±12 semitones while the tab stays exactly as
   written (play along with detuned recordings, capo practice); drums are unaffected,
   and the setting survives switching songs. Click the readout to reset to +0.
+- **SoundFont menu** — pick the instrument sounds from the transport bar and compare
+  them on the same song: MuseScore General (default), GeneralUser GS, or the tiny
+  Sonivox fallback. Switching reloads the synth in place (song, loop, speed and
+  transpose are kept) and the choice is remembered per browser. Any `.sf2`/`.sf3`
+  dropped into `static/vendor/alphatab/soundfont/` appears in the menu too.
 - **Count-in** — one bar of clicks before playback (toggleable, on by default)
 - **Per-track rail** — mute, solo, volume fader, and show/hide (eye) per track.
   Hiding a track that carries lyrics (the vocal track) removes its confusing tab
@@ -40,7 +45,7 @@ hardware or drivers needed.
 ```bash
 python3 -m venv .venv          # add --copies if the repo lives on /mnt/c under WSL
 .venv/bin/pip install -e ".[dev]"
-./scripts/fetch_vendor.sh      # downloads alphaTab JS, Bravura font, SoundFont (one time)
+./scripts/fetch_vendor.sh      # downloads alphaTab JS, Bravura font, SoundFonts (one time, ~75 MB)
 ```
 
 ## Development
