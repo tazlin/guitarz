@@ -6,7 +6,7 @@
 # app back up" is always: ./scripts/server.sh start
 #
 # Configuration via environment (all optional):
-#   GUITARZ_ROOT  music folder to serve   (default: the project directory)
+#   GUITARZ_ROOT  music folder to serve   (default: <project>/gps)
 #   GUITARZ_PORT  TCP port                (default: 8008)
 #   GUITARZ_HOST  bind address            (default: 127.0.0.1)
 set -euo pipefail
@@ -16,7 +16,7 @@ GUITARZ_BIN="$PROJECT_DIR/.venv/bin/guitarz"
 PID_FILE="$PROJECT_DIR/.guitarz.pid"
 LOG_FILE="$PROJECT_DIR/guitarz.log"
 
-ROOT="${GUITARZ_ROOT:-$PROJECT_DIR}"
+ROOT="${GUITARZ_ROOT:-$PROJECT_DIR/gps}"
 PORT="${GUITARZ_PORT:-8008}"
 HOST="${GUITARZ_HOST:-127.0.0.1}"
 
