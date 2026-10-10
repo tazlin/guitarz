@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 import uvicorn
 
+from guitarz.__main__ import default_root
 from guitarz.server import create_app
 
 # Defined here rather than imported from conftest: conftest is pytest-loaded,
@@ -31,12 +32,16 @@ from guitarz.server import create_app
 # elsewhere on sys.path (e.g. via PYTHONPATH leaking from another project).
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# The real tab collection lives outside the repo ($GUITARZ_ROOT or ~/gps), so
+# the sample songs are looked up there; tests copy them into tmp roots.
+MUSIC_ROOT = default_root()
+
 
 def _find_sample() -> Path | None:
-    """Locate the well-known GP7 sample song anywhere under the repo.
+    """Locate the well-known GP7 sample song anywhere under the music root.
 
     The music collection is user data and gets reorganized freely (it moved
-    from the repo root into key-based subfolders like ``gps/Standard/``), so
+    out of the repo into ``~/gps`` with key-based subfolders), so
     hardcoding a location would silently skip every browser test after each
     reshuffle. Searching by name keeps the suite running wherever the file
     lives; the tests still skip cleanly if it is gone entirely.
@@ -44,7 +49,7 @@ def _find_sample() -> Path | None:
     Returns:
         Path to the sample ``.gp`` file, or None when it cannot be found.
     """
-    for p in REPO_ROOT.glob("**/Joe Walsh-Funk*.gp"):
+    for p in MUSIC_ROOT.glob("**/Joe Walsh-Funk*.gp"):
         if ".venv" not in p.parts and "static" not in p.parts:
             return p
     return None
@@ -69,7 +74,7 @@ def _find_lyric_sample() -> Path | None:
     Returns:
         Path to the lyric-bearing ``.gp`` file, or None when not found.
     """
-    for p in REPO_ROOT.glob("**/*Children Of The Sea*.gp"):
+    for p in MUSIC_ROOT.glob("**/*Children Of The Sea*.gp"):
         if ".venv" not in p.parts and "static" not in p.parts:
             return p
     return None
@@ -91,7 +96,7 @@ pytestmark = [
         not VENDOR_JS.exists(),
         reason="alphaTab not vendored (run scripts/fetch_vendor.sh)",
     ),
-    pytest.mark.skipif(SAMPLE_GP is None, reason="sample .gp song not found in repo"),
+    pytest.mark.skipif(SAMPLE_GP is None, reason="sample .gp song not found in music root"),
 ]
 
 
@@ -590,7 +595,7 @@ def test_soundfont_menu_switches_and_persists(live_server):
     asyncio.run(scenario())
 
 
-@pytest.mark.skipif(LYRIC_GP is None, reason="no lyric-bearing .gp song found in repo")
+@pytest.mark.skipif(LYRIC_GP is None, reason="no lyric-bearing .gp song found in music root")
 def test_hiding_vocal_track_keeps_lyrics_visible(live_server):
     """Hiding a lyric-bearing track moves its lyrics onto a visible track.
 

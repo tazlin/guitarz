@@ -6,7 +6,7 @@
 # app back up" is always: ./scripts/server.sh start
 #
 # Configuration via environment (all optional):
-#   GUITARZ_ROOT  music folder to serve   (default: <project>/gps)
+#   GUITARZ_ROOT  music folder to serve   (default: ~/gps, read by guitarz itself)
 #   GUITARZ_PORT  TCP port                (default: 8008)
 #   GUITARZ_HOST  bind address            (default: 127.0.0.1)
 set -euo pipefail
@@ -16,7 +16,6 @@ GUITARZ_BIN="$PROJECT_DIR/.venv/bin/guitarz"
 PID_FILE="$PROJECT_DIR/.guitarz.pid"
 LOG_FILE="$PROJECT_DIR/guitarz.log"
 
-ROOT="${GUITARZ_ROOT:-$PROJECT_DIR/gps}"
 PORT="${GUITARZ_PORT:-8008}"
 HOST="${GUITARZ_HOST:-127.0.0.1}"
 
@@ -40,7 +39,7 @@ start() {
         return 0
     fi
     [ -x "$GUITARZ_BIN" ] || { echo "error: $GUITARZ_BIN not found — create the venv and 'pip install -e .' first"; exit 1; }
-    nohup "$GUITARZ_BIN" --root "$ROOT" --host "$HOST" --port "$PORT" >>"$LOG_FILE" 2>&1 &
+    nohup "$GUITARZ_BIN" --host "$HOST" --port "$PORT" >>"$LOG_FILE" 2>&1 &
     echo $! > "$PID_FILE"
     # Wait until the API answers so "start" failing is loud, not silent.
     for _ in $(seq 1 40); do
@@ -76,7 +75,7 @@ status() {
     local pid
     pid="$(alive_pid)"
     if [ -n "$pid" ]; then
-        echo "guitarz running (pid $pid) at http://$HOST:$PORT — serving $ROOT"
+        echo "guitarz running (pid $pid) at http://$HOST:$PORT — serving ${GUITARZ_ROOT:-~/gps}"
     else
         echo "guitarz is not running"
         return 1

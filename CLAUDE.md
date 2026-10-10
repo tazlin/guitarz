@@ -9,7 +9,7 @@ vanilla-JS frontend on alphaTab (score rendering + SoundFont playback).
 .venv/bin/pip install -e ".[dev]"      # install with test dependencies
 .venv/bin/pytest                       # full suite (browser smoke auto-skips without Chrome)
 .venv/bin/pytest -m "not browser"      # fast unit loop for red-green cycles
-.venv/bin/guitarz --root <dir>         # run the app at http://127.0.0.1:8008
+.venv/bin/guitarz                      # run the app at http://127.0.0.1:8008 (serves $GUITARZ_ROOT or ~/gps)
 ./scripts/fetch_vendor.sh              # (re)download alphaTab assets into static/vendor/
 ```
 
@@ -38,7 +38,8 @@ vanilla-JS frontend on alphaTab (score rendering + SoundFont playback).
 - `guitarz/server.py` — FastAPI app factory (`create_app`), `/api/browse`, `/api/file`,
   path-traversal guard, `EXTENSIONS` allowlist, `/api/soundfonts` catalog (scans
   `static/vendor/alphatab/soundfont/`; default preference in `DEFAULT_SOUNDFONTS`)
-- `guitarz/__main__.py` — CLI entry point
+- `guitarz/__main__.py` — CLI entry point; `default_root()` = `$GUITARZ_ROOT` or `~/gps`
+- `~/gps` — the user's Guitar Pro collection, kept OUT of the repo (`gps/` is gitignored)
 - `static/js/` — `app.js` (boot; resolves the SoundFont before alphaTab init),
   `explorer.js` (file tree), `conductor.js` (alphaTab + track rail), `transport.js`
   (playback controls + SoundFont menu)

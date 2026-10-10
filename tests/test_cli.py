@@ -45,3 +45,41 @@ def test_options_are_passed_through_to_uvicorn(monkeypatch, tmp_path):
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 9001
     assert captured["app"] is not None
+
+
+def test_default_root_is_gps_in_home(monkeypatch, tmp_path):
+    """With no ``GUITARZ_ROOT`` set, the music root is ``~/gps``.
+
+    The tab collection is personal creative data and lives outside the source
+    tree (like xil-pipeline's ``$XIL_PROJECTROOT``), so the default must point
+    at the user's home, not at the repo or the current directory.
+    """
+    monkeypatch.delenv("GUITARZ_ROOT", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert cli.default_root() == tmp_path / "gps"
+
+
+def test_default_root_honors_env_var(monkeypatch, tmp_path):
+    """``GUITARZ_ROOT`` overrides the ``~/gps`` default, with ``~`` expanded.
+
+    Users keep the collection wherever they like; the env var is the one place
+    to say so, shared by the CLI and both launcher scripts.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("GUITARZ_ROOT", "~/elsewhere")
+    assert cli.default_root() == tmp_path / "elsewhere"
+
+
+def test_cli_serves_default_root_when_no_flag(monkeypatch, tmp_path):
+    """Without ``--root`` the CLI serves ``default_root()``, not the cwd.
+
+    The launcher scripts no longer pass ``--root``; they rely on this default,
+    so it must reach ``create_app`` unchanged.
+    """
+    monkeypatch.setenv("GUITARZ_ROOT", str(tmp_path))
+    served = {}
+    monkeypatch.setattr(cli, "create_app", lambda root: served.setdefault("root", root))
+    monkeypatch.setattr(cli.uvicorn, "run", lambda app, **kw: None)
+    monkeypatch.setattr("sys.argv", ["guitarz"])
+    cli.main()
+    assert served["root"] == tmp_path

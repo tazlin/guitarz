@@ -63,6 +63,20 @@ a free port, drives the UI in headless Chrome over the DevTools protocol, and
 asserts render + player-ready + playback actually advancing. It auto-skips if
 Chrome or the vendored alphaTab assets are missing.
 
+## Music folder (outside the repo)
+
+Your Guitar Pro files are personal data, so they do not live in this repo.
+guitarz serves `$GUITARZ_ROOT`, or `~/gps` when it is not set. Put this in
+`~/.bashrc`:
+
+```bash
+export GUITARZ_ROOT=~/gps
+```
+
+`gps/` is gitignored, so a stray copy in the project folder is never committed.
+The browser smoke test copies its sample songs (Funk #49, Children Of The Sea)
+from this folder and skips if they are not there.
+
 ## Run
 
 As a managed background server (recommended day-to-day):
@@ -78,13 +92,13 @@ As a managed background server (recommended day-to-day):
 Or in the foreground:
 
 ```bash
-.venv/bin/guitarz --root ~/my-tabs        # default root: current directory
+.venv/bin/guitarz --root ~/my-tabs        # default root: $GUITARZ_ROOT or ~/gps
 # guitarz: serving /home/you/my-tabs at http://127.0.0.1:8008
 ```
 
 Open <http://127.0.0.1:8008>, click a song in the Files panel, press play.
 
-Options: `--root DIR` (music folder), `--host` (default 127.0.0.1), `--port` (default 8008).
+Options: `--root DIR` (music folder; default `$GUITARZ_ROOT` or `~/gps`), `--host` (default 127.0.0.1), `--port` (default 8008).
 
 ## gpinfo — collection inspector
 
@@ -94,8 +108,8 @@ track names across all format generations — GP3/GP4/GP5 (binary), GPX/GP6
 (recognized, not deep-parsed), and GP7/8 zip containers:
 
 ```bash
-gpinfo gps/                      # table: one line per file, recursive
-gpinfo --json gps/Standard       # machine-readable
+gpinfo ~/gps/                    # table: one line per file, recursive
+gpinfo --json ~/gps/Standard    # machine-readable
 gpinfo "some song.gp5" other.gp  # individual files
 ```
 

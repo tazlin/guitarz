@@ -15,11 +15,6 @@ from fastapi.testclient import TestClient
 
 from guitarz.server import create_app
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
-# Real-world GP7/8 sample used by the browser smoke test. Kept at repo root
-# because it is also the app's out-of-the-box demo file.
-SAMPLE_GP = REPO_ROOT / "Joe Walsh-Funk #49-02-20-2011.gp"
 
 
 @pytest.fixture()

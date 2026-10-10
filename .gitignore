@@ -5,3 +5,4 @@ __pycache__/
 static/vendor/
 .guitarz.pid
 guitarz.log
+gps/
