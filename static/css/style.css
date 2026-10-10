@@ -233,8 +233,16 @@ html, body {
 
 /* ---------- score viewport ---------- */
 
+#stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 #viewport {
   flex: 1;
+  min-height: 0;
   position: relative;
   overflow-y: auto;
   overflow-x: hidden;
@@ -262,6 +270,36 @@ html, body {
   max-width: 70%;
   text-align: center;
 }
+
+/* ---------- fretboard pane ---------- */
+
+#fretpane {
+  flex: 0 0 auto;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  padding: 4px 10px 8px;
+}
+#fret-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+#fret-head h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+  margin-right: 4px;
+}
+#fret-head select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+#fretboard svg { display: block; width: 100%; height: auto; max-height: 26vh; }
+#fretboard .fb-fretnum,
+#fretboard .fb-label { fill: var(--text-dim); font-size: 12px; }
+#fretboard .fb-note-label { fill: #17191d; font-size: 12px; font-weight: 700; }
+#fretboard .fb-note-label.open { fill: var(--text); }
 
 /* alphaTab player chrome */
 .at-cursor-bar { background: rgba(232, 163, 61, 0.12); }

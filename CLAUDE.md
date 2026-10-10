@@ -42,6 +42,7 @@ vanilla-JS frontend on alphaTab (score rendering + SoundFont playback).
 - `~/gps` — the user's Guitar Pro collection, kept OUT of the repo (`gps/` is gitignored)
 - `static/js/` — `app.js` (boot; resolves the SoundFont before alphaTab init),
   `explorer.js` (file tree), `conductor.js` (alphaTab + track rail), `transport.js`
-  (playback controls + SoundFont menu)
+  (playback controls + SoundFont menu), `fretboard.js` (clean-room SVG neck pane;
+  looks/inlays are data in `THEMES`; dots follow `activeBeatsChanged`)
 - `tests/` — pytest suite; `conftest.py` holds the tmp-root and live-server fixtures
 - `static/vendor/` — fetched alphaTab assets, never hand-edited, gitignored

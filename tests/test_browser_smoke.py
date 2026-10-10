@@ -595,6 +595,203 @@ def test_soundfont_menu_switches_and_persists(live_server):
     asyncio.run(scenario())
 
 
+def test_fretboard_geometry(live_server):
+    """The fretboard's pure geometry helpers follow real guitar math.
+
+    Pinned without loading a song (fast): (1) fret positions follow the
+    equal-temperament rule ``scale * (1 - 2^(-n/12))`` — fret 12 sits at half
+    the scale length and fret 24 at three quarters; (2) inlay markers sit on
+    frets 3/5/7/9/15/17/19/21 with double markers on 12 and 24; (3) alphaTab
+    numbers strings from the lowest (string 1), while the drawing puts the
+    highest string on top, so ``stringRow`` must flip the order; (4) MIDI
+    numbers are labeled in scientific pitch (64 = E4); (5) the theme catalog
+    offers the decorative inlay styles the feature exists for.
+    """
+
+    async def scenario():
+        async with chrome_page(live_server + "/") as cdp:
+            for _ in range(40):
+                if await cdp.js("!!(window.Guitarz && Guitarz.fretboard)"):
+                    break
+                await asyncio.sleep(0.25)
+            raw = await cdp.js("""(() => {
+                const fb = Guitarz.fretboard;
+                return JSON.stringify({
+                    f0: fb.fretPosition(0, 1000),
+                    f12: fb.fretPosition(12, 1000),
+                    f24: fb.fretPosition(24, 1000),
+                    inlays: fb.inlayFrets(24),
+                    inlays15: fb.inlayFrets(15),
+                    rows: [1, 2, 3, 4, 5, 6].map(s => fb.stringRow(s, 6)),
+                    names: [40, 64, 61, 45].map(fb.noteName),
+                    inlayStyles: Object.values(fb.THEMES).map(t => t.inlay)});
+            })()""")
+            data = json.loads(raw)
+            assert data["f0"] == 0
+            assert abs(data["f12"] - 500) < 1e-9, data
+            assert abs(data["f24"] - 750) < 1e-9, data
+            assert data["inlays"] == [
+                {"fret": f, "double": f in (12, 24)}
+                for f in (3, 5, 7, 9, 12, 15, 17, 19, 21, 24)
+            ], data
+            assert [i["fret"] for i in data["inlays15"]] == [3, 5, 7, 9, 12, 15], data
+            assert data["rows"] == [5, 4, 3, 2, 1, 0], data
+            assert data["names"] == ["E2", "E4", "C#4", "A2"], data
+            for style in ("dots", "diamonds", "blocks", "tree-of-life"):
+                assert style in data["inlayStyles"], data
+
+    asyncio.run(scenario())
+
+
+def test_fretboard_pane_toggles_and_follows_playback(live_server):
+    """The fretboard pane hides by default, toggles, follows play, and persists.
+
+    Spec: (1) the pane starts hidden and the transport's ``fretboard`` button
+    is unlit; (2) clicking it shows the pane with one SVG string line per
+    string of the selected track, inlay markers, and a track menu listing
+    exactly the string tracks (first one selected); (3) the row mapping is
+    pinned against alphaTab's own pitch model — tuning of the drawn row plus
+    fret equals ``note.realValue`` — so dots can never land on the mirrored
+    string; (4) during playback, note dots appear for the beats being played;
+    (5) switching the theme re-skins the board (``data-theme`` attribute and
+    diamond inlays as polygons); (6) the show/hide and theme choices survive
+    a page reload; (7) a second click hides the pane again.
+    """
+
+    async def scenario():
+        async with chrome_page(_song_url(live_server)) as cdp:
+            await wait_ready(cdp)
+            start = json.loads(await cdp.js("""JSON.stringify({
+                hidden: document.getElementById('fretpane').hidden,
+                lit: document.getElementById('btn-fretboard').classList.contains('on')})"""))
+            assert start == {"hidden": True, "lit": False}, start
+
+            await cdp.js("document.getElementById('btn-fretboard').click()")
+            await asyncio.sleep(0.5)
+            raw = await cdp.js("""(() => {
+                const tracks = Guitarz.conductor.state.score.tracks;
+                const stringTracks = tracks.filter(
+                    t => t.staves.some(s => !s.isPercussion && s.tuning.length > 0));
+                const sel = document.getElementById('fret-track');
+                const track = tracks[Number(sel.value)];
+                const staff = track.staves.find(s => !s.isPercussion && s.tuning.length > 0);
+                let match = 0, total = 0;
+                for (const bar of staff.bars) for (const v of bar.voices)
+                    for (const b of v.beats) for (const n of b.notes) {
+                        if (n.isDead || n.harmonicType) continue;
+                        total++;
+                        const row = Guitarz.fretboard.stringRow(n.string, staff.tuning.length);
+                        if (staff.tuning[row] + n.fret === n.realValue) match++;
+                    }
+                return JSON.stringify({
+                    hidden: document.getElementById('fretpane').hidden,
+                    lit: document.getElementById('btn-fretboard').classList.contains('on'),
+                    strings: document.querySelectorAll('#fretboard .fb-string').length,
+                    tuningLen: staff.tuning.length,
+                    inlays: document.querySelectorAll('#fretboard .fb-inlay').length,
+                    options: [...sel.options].map(o => Number(o.value)),
+                    stringIdx: stringTracks.map(t => t.index),
+                    selected: Number(sel.value),
+                    match, total});
+            })()""")
+            shown = json.loads(raw)
+            assert shown["hidden"] is False and shown["lit"] is True, shown
+            assert shown["strings"] == shown["tuningLen"], shown
+            assert shown["inlays"] > 0, shown
+            assert shown["options"] == shown["stringIdx"], shown
+            assert shown["selected"] == shown["stringIdx"][0], shown
+            assert shown["total"] > 0 and shown["match"] / shown["total"] > 0.95, shown
+
+            # Playback: dots must appear on the board for the played beats.
+            await cdp.js("document.getElementById('btn-play').click()", gesture=True)
+            seen = 0
+            for _ in range(40):
+                await asyncio.sleep(0.5)
+                seen = max(seen, await cdp.js(
+                    "document.querySelectorAll('#fretboard .fb-note').length"))
+                if seen:
+                    break
+            await cdp.js("document.getElementById('btn-stop').click()")
+            assert seen > 0, "no note dots appeared during playback"
+
+            # Theme switch re-skins the board.
+            await cdp.js("""(() => {
+                const sel = document.getElementById('fret-theme');
+                sel.value = 'ebony-diamonds';
+                sel.dispatchEvent(new Event('change'));
+            })()""")
+            themed = json.loads(await cdp.js("""JSON.stringify({
+                theme: document.querySelector('#fretboard svg').dataset.theme,
+                polys: document.querySelectorAll('#fretboard polygon.fb-inlay').length})"""))
+            assert themed["theme"] == "ebony-diamonds" and themed["polys"] > 0, themed
+
+            # Choices persist across a reload.
+            await cdp.send("Page.reload")
+            await wait_ready(cdp)
+            after = json.loads(await cdp.js("""JSON.stringify({
+                hidden: document.getElementById('fretpane').hidden,
+                theme: document.getElementById('fret-theme').value})"""))
+            assert after == {"hidden": False, "theme": "ebony-diamonds"}, after
+
+            await cdp.js("document.getElementById('btn-fretboard').click()")
+            assert await cdp.js("document.getElementById('fretpane').hidden") is True
+
+    asyncio.run(scenario())
+
+
+def test_fretboard_jem_theme_has_24_frets_and_white_vine(live_server):
+    """The JEM-style theme draws a 24-fret neck with a white vine inlay.
+
+    Modeled on the user's own guitar: rosewood board, white tree-of-life
+    vine, 24 frets. Spec: (1) a default theme on this song draws the
+    minimum 22 frets (the song never climbs higher), recorded on the SVG as
+    ``data-frets``; (2) the ``rosewood-jem`` theme forces 24 frets even
+    though the song does not need them — the neck should look like the
+    instrument; (3) its inlay is drawn white; and (4) the vine runs the full
+    neck, so some leaf sits past fret 22.
+    """
+
+    async def scenario():
+        async with chrome_page(_song_url(live_server)) as cdp:
+            await wait_ready(cdp)
+            await cdp.js("""(() => {
+                localStorage.removeItem('guitarz.fretTheme');
+                const sel = document.getElementById('fret-theme');
+                sel.value = 'rosewood-dots';
+                sel.dispatchEvent(new Event('change'));
+                if (document.getElementById('fretpane').hidden)
+                    document.getElementById('btn-fretboard').click();
+            })()""")
+            base = await cdp.js("document.querySelector('#fretboard svg').dataset.frets")
+            assert base == "22", base
+
+            await cdp.js("""(() => {
+                const sel = document.getElementById('fret-theme');
+                sel.value = 'rosewood-jem';
+                sel.dispatchEvent(new Event('change'));
+            })()""")
+            raw = await cdp.js("""(() => {
+                const svg = document.querySelector('#fretboard svg');
+                const leaves = [...svg.querySelectorAll('.fb-inlay')];
+                const fret22 = [...svg.querySelectorAll('.fb-frets line')][21];
+                return JSON.stringify({
+                    frets: svg.dataset.frets,
+                    fills: [...new Set(leaves.map(l => l.getAttribute('fill').toLowerCase()))],
+                    leaves: leaves.length,
+                    pastFret22: leaves.some(l => {
+                        const b = l.getBBox();
+                        return b.x > Number(fret22.getAttribute('x1'));
+                    })});
+            })()""")
+            data = json.loads(raw)
+            assert data["frets"] == "24", data
+            assert data["leaves"] > 0, data
+            assert data["fills"] == ["#ffffff"] or data["fills"] == ["#fff"], data
+            assert data["pastFret22"], data
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.skipif(LYRIC_GP is None, reason="no lyric-bearing .gp song found in music root")
 def test_hiding_vocal_track_keeps_lyrics_visible(live_server):
     """Hiding a lyric-bearing track moves its lyrics onto a visible track.
