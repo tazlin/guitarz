@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -26,10 +27,27 @@ def default_root() -> Path:
     so the env var can be written either way in ``~/.bashrc``. Resolved at
     call time, not import time, so tests and shells can change the env.
 
+    A ``$GUITARZ_ROOT`` that names a missing folder is ignored with a warning
+    on stderr: on WSL a long-lived VS Code server can keep a stale value from
+    an old layout (e.g. a ``/mnt/c/...`` path) long after ``~/.bashrc``
+    changed, and that must not stop the app from finding ``~/gps``.
+
     Returns:
-        The music root path (not checked for existence here; ``main`` does).
+        The music root path. The ``~/gps`` fallback is not checked for
+        existence here; ``main`` does that.
     """
-    return Path(os.environ.get("GUITARZ_ROOT", "~/gps")).expanduser()
+    fallback = Path("~/gps").expanduser()
+    env = os.environ.get("GUITARZ_ROOT")
+    if not env:
+        return fallback
+    root = Path(env).expanduser()
+    if not root.is_dir():
+        print(
+            f"guitarz: warning: GUITARZ_ROOT={env} is not a directory; using ~/gps",
+            file=sys.stderr,
+        )
+        return fallback
+    return root
 
 
 def main() -> None:

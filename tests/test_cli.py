@@ -66,8 +66,26 @@ def test_default_root_honors_env_var(monkeypatch, tmp_path):
     to say so, shared by the CLI and both launcher scripts.
     """
     monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "elsewhere").mkdir()
     monkeypatch.setenv("GUITARZ_ROOT", "~/elsewhere")
     assert cli.default_root() == tmp_path / "elsewhere"
+
+
+def test_stale_env_var_falls_back_to_gps_with_warning(monkeypatch, tmp_path, capsys):
+    """A ``GUITARZ_ROOT`` naming a missing folder is ignored, loudly.
+
+    Regression: on WSL the VS Code server kept a ``GUITARZ_ROOT`` from the
+    old Windows-side layout (``/mnt/c/...``) after the collection moved to
+    ``~/gps``. Every launch then died on "not a directory" and the browser
+    smoke tests silently skipped. A stale env var must not shadow a working
+    default, so ``default_root`` falls back to ``~/gps`` and says why on
+    stderr — the user still learns their environment is wrong.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("GUITARZ_ROOT", "/mnt/c/no/such/guitarz")
+    assert cli.default_root() == tmp_path / "gps"
+    err = capsys.readouterr().err
+    assert "/mnt/c/no/such/guitarz" in err and "~/gps" in err
 
 
 def test_cli_serves_default_root_when_no_flag(monkeypatch, tmp_path):
