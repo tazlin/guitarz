@@ -792,6 +792,256 @@ def test_fretboard_jem_theme_has_24_frets_and_white_vine(live_server):
     asyncio.run(scenario())
 
 
+def test_fretboard_previews_next_notes_faded(live_server):
+    """The board shows the next notes to play as faded dots.
+
+    So the fretting hand can move early, the board previews the next *new*
+    attack on the selected track. Spec: (1) ``upcomingBeat(beat)`` returns
+    the first later beat in the same voice — across bar lines — that has at
+    least one note which is not a tie continuation (rests and held notes
+    are skipped, since there is nothing new to fret); it is checked against
+    an independent bar-by-bar flattening of the voice for every beat of the
+    first 16 bars; (2) during playback, preview dots (``.fb-note.next``)
+    appear and are drawn faded (opacity well below the live dots).
+    """
+
+    async def scenario():
+        async with chrome_page(_song_url(live_server)) as cdp:
+            await wait_ready(cdp)
+            raw = await cdp.js("""(() => {
+                const fb = Guitarz.fretboard;
+                const track = Guitarz.conductor.state.score.tracks.find(
+                    t => t.staves.some(s => !s.isPercussion && s.tuning.length > 0));
+                const staff = track.staves.find(s => !s.isPercussion && s.tuning.length > 0);
+                const flat = [];
+                for (const bar of staff.bars) for (const b of bar.voices[0].beats) flat.push(b);
+                const fresh = b => b.notes.some(n => !n.isTieDestination);
+                let checked = 0, bad = [];
+                for (let i = 0; i < flat.length && flat[i].voice.bar.index < 16; i++) {
+                    let want = null;
+                    for (let j = i + 1; j < flat.length; j++)
+                        if (fresh(flat[j])) { want = flat[j]; break; }
+                    const got = fb.upcomingBeat(flat[i]);
+                    checked++;
+                    if (got !== want) bad.push(i);
+                }
+                return JSON.stringify({checked, bad});
+            })()""")
+            data = json.loads(raw)
+            assert data["checked"] > 16 and data["bad"] == [], data
+
+            await cdp.js("""(() => {
+                if (document.getElementById('fretpane').hidden)
+                    document.getElementById('btn-fretboard').click();
+            })()""")
+            await cdp.js("document.getElementById('btn-play').click()", gesture=True)
+            found = None
+            for _ in range(40):
+                await asyncio.sleep(0.5)
+                found = json.loads(await cdp.js("""(() => {
+                    const next = document.querySelector('#fretboard .fb-note.next');
+                    const live = document.querySelector('#fretboard .fb-note:not(.next)');
+                    if (!next) return 'null';
+                    return JSON.stringify({
+                        next: Number(getComputedStyle(next).opacity),
+                        live: live ? Number(getComputedStyle(live).opacity) : 1});
+                })()"""))
+                if found:
+                    break
+            await cdp.js("document.getElementById('btn-stop').click()")
+            assert found, "no faded preview dots appeared during playback"
+            assert found["next"] < 0.6 and found["live"] == 1, found
+
+    asyncio.run(scenario())
+
+
+def test_fretboard_whole_bar_shape_toggle(live_server):
+    """A "bar" toggle outlines every position the current bar uses.
+
+    Seeing the whole bar at once shows the chord shape or scale box the
+    hand should settle into. Spec: (1) ``barShape(bar)`` returns each
+    distinct string/fret pair played in the bar, across all voices, sorted
+    by string then fret — checked against an independent computation for
+    the first 16 bars; (2) the ``#fret-bar`` toggle starts off and shows no
+    shape dots; (3) switched on during playback, the board draws exactly
+    one ``.fb-note.bar`` dot per position of the bar being played
+    (``state.shownBar``); (4) the toggle persists across a reload.
+    """
+
+    async def scenario():
+        async with chrome_page(_song_url(live_server)) as cdp:
+            await wait_ready(cdp)
+            raw = await cdp.js("""(() => {
+                const fb = Guitarz.fretboard;
+                const track = Guitarz.conductor.state.score.tracks.find(
+                    t => t.staves.some(s => !s.isPercussion && s.tuning.length > 0));
+                const staff = track.staves.find(s => !s.isPercussion && s.tuning.length > 0);
+                const bad = [];
+                for (const bar of staff.bars.slice(0, 16)) {
+                    const seen = new Map();
+                    for (const v of bar.voices) for (const b of v.beats) for (const n of b.notes)
+                        seen.set(n.string + ':' + n.fret, {string: n.string, fret: n.fret});
+                    const want = [...seen.values()].sort(
+                        (a, c) => a.string - c.string || a.fret - c.fret);
+                    if (JSON.stringify(fb.barShape(bar)) !== JSON.stringify(want))
+                        bad.push(bar.index);
+                }
+                return JSON.stringify({bad});
+            })()""")
+            assert json.loads(raw)["bad"] == [], raw
+
+            await cdp.js("""(() => {
+                if (document.getElementById('fretpane').hidden)
+                    document.getElementById('btn-fretboard').click();
+            })()""")
+            assert await cdp.js(
+                "document.getElementById('fret-bar').classList.contains('on')") is False
+            await cdp.js("document.getElementById('fret-bar').click()")
+            await cdp.js("document.getElementById('btn-play').click()", gesture=True)
+            got = None
+            for _ in range(40):
+                await asyncio.sleep(0.5)
+                got = json.loads(await cdp.js("""(() => {
+                    const fb = Guitarz.fretboard;
+                    const i = fb.state.shownBar;
+                    if (i === null || i === undefined) return 'null';
+                    const track = Guitarz.conductor.state.score.tracks[fb.state.trackIndex];
+                    const staff = track.staves.find(s => !s.isPercussion && s.tuning.length > 0);
+                    const want = fb.barShape(staff.bars[i]).length;
+                    const drawn = document.querySelectorAll('#fretboard .fb-note.bar').length;
+                    return JSON.stringify({i, want, drawn});
+                })()"""))
+                if got and got["want"] > 0:
+                    break
+            await cdp.js("Guitarz.conductor.state.api.pause()")
+            assert got and got["want"] > 0, got
+            assert got["drawn"] == got["want"], got
+
+            await cdp.send("Page.reload")
+            await wait_ready(cdp)
+            assert await cdp.js(
+                "document.getElementById('fret-bar').classList.contains('on')") is True
+
+    asyncio.run(scenario())
+
+
+def test_fretboard_click_plays_note(live_server):
+    """Clicking a spot on the neck plays that note with the track's sound.
+
+    Spec: (1) the board has one click zone (``.fb-hit``) per string per
+    fret, open strings included; (2) clicking the zone for string 6 (the
+    highest, top row) fret 5 calls alphaTab's ``playNote`` with a note at
+    that string/fret whose pitch is the top row's open tuning + 5 — the
+    same mapping the dots use; (3) the click flashes a ``.fb-note.tap`` dot
+    so the hand sees what it hit; (4) the throwaway note never enters the
+    score (the borrowed voice keeps its beat count).
+    """
+
+    async def scenario():
+        async with chrome_page(_song_url(live_server)) as cdp:
+            await wait_ready(cdp)
+            await cdp.js("""(() => {
+                if (document.getElementById('fretpane').hidden)
+                    document.getElementById('btn-fretboard').click();
+                const api = Guitarz.conductor.state.api;
+                window.__played = [];
+                const orig = api.playNote.bind(api);
+                api.playNote = n => {
+                    window.__played.push({string: n.string, fret: n.fret, real: n.realValue});
+                    return orig(n);
+                };
+            })()""")
+            raw = await cdp.js("""(() => {
+                const fb = Guitarz.fretboard;
+                const track = Guitarz.conductor.state.score.tracks[fb.state.trackIndex];
+                const staff = track.staves.find(s => !s.isPercussion && s.tuning.length > 0);
+                const before = staff.bars.map(b => b.voices.map(v => v.beats.length).join()).join();
+                const hits = document.querySelectorAll('#fretboard .fb-hit').length;
+                const zone = document.querySelector(
+                    '#fretboard .fb-hit[data-string="6"][data-fret="5"]');
+                zone.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                const after = staff.bars.map(b => b.voices.map(v => v.beats.length).join()).join();
+                return JSON.stringify({
+                    hits, want: (fb.state.geom.frets + 1) * staff.tuning.length,
+                    played: window.__played, top: staff.tuning[0],
+                    tap: document.querySelectorAll('#fretboard .fb-note.tap').length,
+                    unchanged: before === after});
+            })()""", gesture=True)
+            data = json.loads(raw)
+            assert data["hits"] == data["want"], data
+            assert data["played"] == [
+                {"string": 6, "fret": 5, "real": data["top"] + 5}
+            ], data
+            assert data["tap"] == 1, data
+            assert data["unchanged"], data
+
+    asyncio.run(scenario())
+
+
+def test_fretboard_bass_neck_and_left_handed_mirror(live_server):
+    """Bass tracks get their own neck; the lefty toggle mirrors the board.
+
+    Spec: (1) choosing the Bass track draws one string line per bass
+    string, labeled from the bass's own tuning (high string on top);
+    (2) the ``#fret-lefty`` toggle starts off; switched on, the neck is
+    mirrored — the nut moves to the right, so the fret-1 click zone lies
+    right of the fret-12 zone — while every text label stays readable (its
+    net screen transform is not mirrored); (3) the choice persists across
+    a reload.
+    """
+
+    async def scenario():
+        async with chrome_page(_song_url(live_server)) as cdp:
+            await wait_ready(cdp)
+            raw = await cdp.js("""(() => {
+                if (document.getElementById('fretpane').hidden)
+                    document.getElementById('btn-fretboard').click();
+                const tracks = Guitarz.conductor.state.score.tracks;
+                const bass = tracks.find(t => /bass/i.test(t.name));
+                const sel = document.getElementById('fret-track');
+                sel.value = bass.index;
+                sel.dispatchEvent(new Event('change'));
+                const staff = bass.staves.find(s => !s.isPercussion && s.tuning.length > 0);
+                return JSON.stringify({
+                    strings: document.querySelectorAll('#fretboard .fb-string').length,
+                    labels: [...document.querySelectorAll('#fretboard .fb-label')]
+                        .map(l => l.textContent),
+                    want: staff.tuning.map(Guitarz.fretboard.noteName)});
+            })()""")
+            bass = json.loads(raw)
+            assert bass["strings"] == len(bass["want"]) and bass["strings"] in (4, 5), bass
+            assert bass["labels"] == bass["want"], bass
+
+            async def layout():
+                """Measure zone order, label readability and the lefty flags."""
+                return json.loads(await cdp.js("""(() => {
+                    const r = q => document.querySelector(q).getBoundingClientRect();
+                    const f1 = r('#fretboard .fb-hit[data-fret="1"]');
+                    const f12 = r('#fretboard .fb-hit[data-fret="12"]');
+                    const texts = [...document.querySelectorAll('#fretboard text')];
+                    return JSON.stringify({
+                        lit: document.getElementById('fret-lefty').classList.contains('on'),
+                        lefty: document.querySelector('#fretboard svg').dataset.lefty === '1',
+                        fret1RightOf12: f1.left > f12.left,
+                        mirroredText: texts.filter(t => t.getCTM().a < 0).length});
+                })()"""))
+
+            right = await layout()
+            assert right == {"lit": False, "lefty": False, "fret1RightOf12": False,
+                             "mirroredText": 0}, right
+            await cdp.js("document.getElementById('fret-lefty').click()")
+            left = await layout()
+            assert left == {"lit": True, "lefty": True, "fret1RightOf12": True,
+                            "mirroredText": 0}, left
+
+            await cdp.send("Page.reload")
+            await wait_ready(cdp)
+            again = await layout()
+            assert again["lefty"] and again["lit"], again
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.skipif(LYRIC_GP is None, reason="no lyric-bearing .gp song found in music root")
 def test_hiding_vocal_track_keeps_lyrics_visible(live_server):
     """Hiding a lyric-bearing track moves its lyrics onto a visible track.

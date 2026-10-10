@@ -146,6 +146,61 @@
     return NOTE_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
   }
 
+  /**
+   * The beat right after this one in the same voice, crossing bar lines.
+   *
+   * Walked by hand (index within the voice, then bar.nextBar) rather than
+   * trusting a precomputed link, so the rule is exactly "same voice number,
+   * next in time" and empty bars are skipped.
+   *
+   * @param {object} beat - alphaTab Beat model.
+   * @returns {object|null} the following beat, or null at the song's end.
+   */
+  function followingBeat(beat) {
+    const beats = beat.voice.beats;
+    if (beat.index + 1 < beats.length) return beats[beat.index + 1];
+    for (let bar = beat.voice.bar.nextBar; bar; bar = bar.nextBar) {
+      const voice = bar.voices[beat.voice.index];
+      if (voice && voice.beats.length) return voice.beats[0];
+    }
+    return null;
+  }
+
+  /**
+   * The next beat that asks the hand to fret something new.
+   *
+   * Rests and beats made only of tie continuations (held notes) are
+   * skipped: there is nothing new to place, so previewing them would just
+   * repeat what is already lit. This drives the faded "coming up" dots.
+   *
+   * @param {object} beat - the beat sounding now (may itself be a rest).
+   * @returns {object|null} the next beat with a fresh attack, or null.
+   */
+  function upcomingBeat(beat) {
+    for (let b = followingBeat(beat); b; b = followingBeat(b)) {
+      if (b.notes.some((n) => !n.isTieDestination)) return b;
+    }
+    return null;
+  }
+
+  /**
+   * Every distinct position a bar asks for, across all its voices.
+   *
+   * Drawn as outlines under the live dots, this is the "shape" of the bar —
+   * the chord grip or scale box the hand should settle into. Sorted by
+   * string then fret so the result is stable and easy to compare.
+   *
+   * @param {object} bar - alphaTab Bar model.
+   * @returns {Array<{string: number, fret: number}>} unique positions.
+   */
+  function barShape(bar) {
+    const seen = new Map();
+    for (const voice of bar.voices)
+      for (const beat of voice.beats)
+        for (const n of beat.notes) seen.set(n.string + ":" + n.fret, { string: n.string, fret: n.fret });
+    return [...seen.values()].sort((a, b) => a.string - b.string || a.fret - b.fret);
+  }
+
   /** Live pane state; module-private apart from what the API exposes. */
   const state = {
     api: null,
@@ -154,6 +209,9 @@
     trackIndex: null, // selected track index, null when no string track
     geom: null, // geometry of the board currently drawn
     notesLayer: null, // <g> that holds the note dots
+    showBar: false, // outline the whole current bar's shape
+    lefty: false, // mirror the neck for a left-handed player
+    shownBar: null, // index of the bar whose shape is drawn, if any
   };
 
   const pane = document.getElementById("fretpane");
@@ -161,6 +219,14 @@
   const btn = document.getElementById("btn-fretboard");
   const trackSel = document.getElementById("fret-track");
   const themeSel = document.getElementById("fret-theme");
+  const barBtn = document.getElementById("fret-bar");
+
+  const leftyBtn = document.getElementById("fret-lefty");
+
+  /** localStorage key remembering the whole-bar shape toggle ("1" = on). */
+  const BAR_KEY = "guitarz.fretBar";
+  /** localStorage key remembering the left-handed toggle ("1" = on). */
+  const LEFTY_KEY = "guitarz.fretLefty";
 
   /**
    * Read a saved preference; storage may throw in private windows.
@@ -420,46 +486,195 @@
     el("stop", { offset: "0%", "stop-color": theme.wood[0] }, grad);
     el("stop", { offset: "100%", "stop-color": theme.wood[1] }, grad);
 
+    // Everything is drawn right-handed into one group; a left-handed neck
+    // is the same drawing mirrored as a whole (label() keeps text readable).
+    const root = el("g", { class: "fb-root" }, svg);
+    if (state.lefty) {
+      svg.setAttribute("data-lefty", "1");
+      root.setAttribute("transform", `translate(${VIEW_W} 0) scale(-1 1)`);
+    }
+
     const right = geom.fretX(geom.frets);
     el("rect", { x: NUT_X, y: BOARD_TOP, width: right - NUT_X,
-      height: BOARD_BOTTOM - BOARD_TOP, fill: "url(#fb-wood)" }, svg);
+      height: BOARD_BOTTOM - BOARD_TOP, fill: "url(#fb-wood)" }, root);
 
-    drawInlays(el("g", { class: "fb-inlays" }, svg), geom, theme);
+    drawInlays(el("g", { class: "fb-inlays" }, root), geom, theme);
 
-    const frets = el("g", { class: "fb-frets" }, svg);
+    const frets = el("g", { class: "fb-frets" }, root);
     for (let f = 1; f <= geom.frets; f++) {
       const x = geom.fretX(f);
       el("line", { x1: x, y1: BOARD_TOP, x2: x, y2: BOARD_BOTTOM,
         stroke: theme.fret, "stroke-width": 2.2 }, frets);
-      el("text", { x: (geom.fretX(f - 1) + x) / 2, y: BOARD_TOP - 8,
-        class: "fb-fretnum", "text-anchor": "middle" }, frets).textContent = f;
+      label({ x: (geom.fretX(f - 1) + x) / 2, y: BOARD_TOP - 8,
+        class: "fb-fretnum", "text-anchor": "middle" }, frets, f);
     }
     el("rect", { x: NUT_X - 4, y: BOARD_TOP, width: 5,
-      height: BOARD_BOTTOM - BOARD_TOP, fill: theme.nut }, svg);
+      height: BOARD_BOTTOM - BOARD_TOP, fill: theme.nut }, root);
 
-    const strings = el("g", { class: "fb-strings" }, svg);
+    const strings = el("g", { class: "fb-strings" }, root);
     for (let row = 0; row < geom.strings; row++) {
       const y = geom.stringY(row);
       // Lower strings are thicker, like the real thing.
       const w = 0.9 + (1.8 * row) / Math.max(1, geom.strings - 1);
       el("line", { class: "fb-string", x1: NUT_X - 26, y1: y, x2: right, y2: y,
         stroke: theme.string, "stroke-width": w }, strings);
-      el("text", { x: LABEL_W - 4, y: y + 4, class: "fb-label", "text-anchor": "end" },
-        strings).textContent = noteName(staff.tuning[row]);
+      label({ x: LABEL_W - 4, y: y + 4, class: "fb-label", "text-anchor": "end" },
+        strings, noteName(staff.tuning[row]));
     }
 
-    state.notesLayer = el("g", { class: "fb-notes" }, svg);
+    state.notesLayer = el("g", { class: "fb-notes" }, root);
+    drawHitZones(root, geom);
     board.appendChild(svg);
   }
 
   /**
-   * Put a dot on the board for every note the selected track is sounding.
+   * Create a text label that reads correctly on a mirrored (lefty) neck.
+   *
+   * Inside the mirrored group a plain <text> would come out backwards. So
+   * each label gets its own mirror around its anchor x, which cancels the
+   * group's mirror for the glyphs while keeping the position mirrored. The
+   * start/end anchors swap too, so a label still grows away from the board.
+   *
+   * @param {Object<string, (string|number)>} attrs - text attributes (x, y, ...).
+   * @param {Element} parent - element to append to.
+   * @param {(string|number)} content - the label text.
+   * @returns {SVGTextElement} the label.
+   */
+  function label(attrs, parent, content) {
+    const t = el("text", attrs, parent);
+    t.textContent = content;
+    if (state.lefty) {
+      t.setAttribute("transform", `translate(${2 * attrs.x} 0) scale(-1 1)`);
+      const anchor = attrs["text-anchor"];
+      if (anchor === "end") t.setAttribute("text-anchor", "start");
+      else if (anchor === "start") t.setAttribute("text-anchor", "end");
+    }
+    return t;
+  }
+
+  /**
+   * Draw one note dot into the notes layer.
+   *
+   * Each dot carries data-string / data-fret for inspection; color comes
+   * from the track's rail chip so the board matches the staff it mirrors.
+   * Open strings are rings, dead notes show an ×. Non-live dots get an
+   * extra class that CSS styles: "next" (faded preview), "bar" (outline
+   * of the bar's shape) or "tap" (a clicked spot).
+   *
+   * @param {{string: number, fret: number, isDead: (boolean|undefined)}} note -
+   *        alphaTab Note model, or a plain position from barShape().
+   * @param {string} color - fill/stroke color.
+   * @param {string} kind - "live", "next", "bar", or "tap".
+   */
+  function drawNote(note, color, kind) {
+    const geom = state.geom;
+    const row = stringRow(note.string, geom.strings);
+    if (row < 0 || row >= geom.strings || note.fret > geom.frets) return;
+    const r = Math.min(geom.rowGap * 0.42, 11);
+    const x = geom.noteX(note.fret);
+    const y = geom.stringY(row);
+    const cls = "fb-note" + (note.isDead ? " dead" : "") + (kind === "live" ? "" : " " + kind);
+    const g = el("g", { class: cls, "data-string": note.string, "data-fret": note.fret },
+      state.notesLayer);
+    el("circle", { cx: x, cy: y, r, fill: note.fret === 0 ? "none" : color,
+      stroke: color, "stroke-width": 2 }, g);
+    label({ x, y: y + 4, "text-anchor": "middle",
+      class: "fb-note-label" + (note.fret === 0 ? " open" : "") }, g,
+      note.isDead ? "×" : note.fret);
+  }
+
+  /**
+   * Play one string/fret of the selected track through the synth.
+   *
+   * alphaTab's playNote needs a note that sits in a beat with a voice, bar,
+   * staff and track (for instrument, tuning and tempo). So a throwaway beat
+   * borrows the voice of the staff's first bar for that context but is
+   * never added to the voice's beat list — the score is not changed. It is
+   * skipped while the song plays, because a one-off note would interrupt
+   * playback.
+   *
+   * @param {number} string - alphaTab string number (1 = lowest).
+   * @param {number} fret - fret number (0 = open).
+   * @returns {object|null} the note that was played, or null when nothing
+   *          was (no string track, or the song is playing).
+   */
+  function playPosition(string, fret) {
+    const api = state.api;
+    const track = selectedTrack();
+    const staff = track && stringStaff(track);
+    if (!api || !staff || api.playerState === alphaTab.synth.PlayerState.Playing) return null;
+    const model = alphaTab.model;
+    const beat = new model.Beat();
+    beat.duration = model.Duration.Quarter;
+    beat.voice = staff.bars[0].voices[0];
+    const note = new model.Note();
+    note.string = string;
+    note.fret = fret;
+    beat.addNote(note);
+    beat.finish(api.settings, null);
+    api.playNote(note);
+    return note;
+  }
+
+  /**
+   * Add one invisible click zone per string per fret, open strings included.
+   *
+   * Zones are drawn last so they sit on top of everything, and span the
+   * whole cell between two frets and halfway to the next strings — easy to
+   * hit with a mouse. A click plays the note and flashes a dot there.
+   *
+   * @param {SVGElement} parent - the board's root group.
+   * @param {object} geom - board geometry from geometry().
+   */
+  function drawHitZones(parent, geom) {
+    const hits = el("g", { class: "fb-hits" }, parent);
+    for (let row = 0; row < geom.strings; row++) {
+      const string = geom.strings - row; // inverse of stringRow
+      for (let f = 0; f <= geom.frets; f++) {
+        const x0 = f === 0 ? NUT_X - 26 : geom.fretX(f - 1);
+        const x1 = f === 0 ? NUT_X : geom.fretX(f);
+        const zone = el("rect", {
+          class: "fb-hit",
+          x: x0,
+          y: geom.stringY(row) - geom.rowGap / 2,
+          width: x1 - x0,
+          height: geom.rowGap,
+          fill: "transparent",
+          "data-string": string,
+          "data-fret": f,
+        }, hits);
+        zone.addEventListener("click", () => {
+          playPosition(string, f);
+          flashTap(string, f);
+        });
+      }
+    }
+  }
+
+  /**
+   * Briefly show a dot where the user clicked.
+   *
+   * @param {number} string - alphaTab string number.
+   * @param {number} fret - fret number.
+   */
+  function flashTap(string, fret) {
+    if (!state.notesLayer) return;
+    const track = selectedTrack();
+    const color = (track && Guitarz.conductor.state.trackColors.get(track.index)) || "#e8a33d";
+    drawNote({ string, fret }, color, "tap");
+    const dot = state.notesLayer.lastElementChild;
+    setTimeout(() => dot && dot.remove(), 600);
+  }
+
+  /**
+   * Light the notes the selected track is sounding, and preview the next.
    *
    * Takes the beats alphaTab reports as active (all tracks, all voices)
-   * and keeps those on the selected track's board staff. Each dot carries
-   * data-string / data-fret for inspection; color comes from the track's
-   * rail chip so the board matches the staff it mirrors. Dead notes show
-   * an ×. An empty list (stop, rests) simply clears the layer.
+   * and keeps those on the selected track's board staff. Layers are drawn
+   * back to front so live dots always win where they overlap: the bar's
+   * whole shape as outlines (when the bar toggle is on), then the next
+   * fresh attack (upcomingBeat) faded, then the notes sounding now. An
+   * empty list (stop) simply clears the layer.
    *
    * @param {Array<object>} beats - alphaTab Beat models now sounding.
    */
@@ -467,28 +682,20 @@
     const layer = state.notesLayer;
     if (!layer || !state.geom) return;
     layer.innerHTML = "";
+    state.shownBar = null;
     const track = selectedTrack();
     const staff = track && stringStaff(track);
     if (!staff) return;
     const color = Guitarz.conductor.state.trackColors.get(track.index) || "#e8a33d";
-    const geom = state.geom;
-    const r = Math.min(geom.rowGap * 0.42, 11);
-    for (const beat of beats || []) {
-      if (beat.voice.bar.staff !== staff) continue;
-      for (const note of beat.notes) {
-        const row = stringRow(note.string, geom.strings);
-        if (row < 0 || row >= geom.strings || note.fret > geom.frets) continue;
-        const x = geom.noteX(note.fret);
-        const y = geom.stringY(row);
-        const g = el("g", { class: "fb-note" + (note.isDead ? " dead" : ""),
-          "data-string": note.string, "data-fret": note.fret }, layer);
-        el("circle", { cx: x, cy: y, r, fill: note.fret === 0 ? "none" : color,
-          stroke: color, "stroke-width": 2 }, g);
-        el("text", { x, y: y + 4, "text-anchor": "middle",
-          class: "fb-note-label" + (note.fret === 0 ? " open" : "") }, g).textContent =
-          note.isDead ? "×" : note.fret;
-      }
+    const mine = (beats || []).filter((b) => b.voice.bar.staff === staff);
+    const lead = mine.find((b) => b.voice.index === 0) || mine[0];
+    if (lead && state.showBar) {
+      state.shownBar = lead.voice.bar.index;
+      for (const pos of barShape(lead.voice.bar)) drawNote(pos, color, "bar");
     }
+    const next = lead && upcomingBeat(lead);
+    if (next) for (const note of next.notes) if (!note.isTieDestination) drawNote(note, color, "next");
+    for (const beat of mine) for (const note of beat.notes) drawNote(note, color, "live");
   }
 
   /**
@@ -565,6 +772,19 @@
       state.trackIndex = Number(trackSel.value);
       if (state.shown) drawBoard();
     };
+    state.showBar = load(BAR_KEY) === "1";
+    barBtn.classList.toggle("on", state.showBar);
+    barBtn.onclick = () => {
+      state.showBar = barBtn.classList.toggle("on");
+      save(BAR_KEY, state.showBar ? "1" : "0");
+    };
+    state.lefty = load(LEFTY_KEY) === "1";
+    leftyBtn.classList.toggle("on", state.lefty);
+    leftyBtn.onclick = () => {
+      state.lefty = leftyBtn.classList.toggle("on");
+      save(LEFTY_KEY, state.lefty ? "1" : "0");
+      if (state.shown) drawBoard();
+    };
     themeSel.onchange = () => {
       state.theme = themeSel.value;
       save(THEME_KEY, state.theme);
@@ -574,5 +794,7 @@
     setShown(load(SHOW_KEY) === "1");
   }
 
-  Guitarz.fretboard = { init, fretPosition, inlayFrets, stringRow, noteName, THEMES, state };
+  Guitarz.fretboard = {
+    init, fretPosition, inlayFrets, stringRow, noteName, upcomingBeat, barShape, playPosition, THEMES, state,
+  };
 })();

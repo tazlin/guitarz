@@ -300,6 +300,12 @@ html, body {
 #fretboard .fb-label { fill: var(--text-dim); font-size: 12px; }
 #fretboard .fb-note-label { fill: #17191d; font-size: 12px; font-weight: 700; }
 #fretboard .fb-note-label.open { fill: var(--text); }
+#fretboard .fb-note.next { opacity: 0.35; }
+#fretboard .fb-note.bar circle { fill: rgba(23, 25, 29, 0.55); stroke-dasharray: 3 2; }
+#fretboard .fb-note.bar .fb-note-label { fill: var(--text); opacity: 0.8; }
+#fretboard .fb-hit { cursor: pointer; }
+#fretboard .fb-hit:hover { fill: rgba(255, 255, 255, 0.08); }
+.tbtn.small { padding: 3px 9px; font-size: 12px; }
 
 /* alphaTab player chrome */
 .at-cursor-bar { background: rgba(232, 163, 61, 0.12); }
