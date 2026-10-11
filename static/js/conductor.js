@@ -21,7 +21,10 @@
    *           for string-instrument tracks; drives both rail chips and the
    *           score-side staff tinting so they always match.
    * @property {number} transpose - global playback transpose in semitones
-   *           (audio only, ±12); persists across song loads like speed/loop.
+   *           (audio only, ±12). With autoTranspose on, each song load sets
+   *           it from the song's tuning; off, it persists across loads.
+   * @property {boolean} autoTranspose - derive transpose from each song's
+   *           tuning on load (see tuningOffset); saved per browser.
    * @property {Set<number>} lyricTracks - indexes of tracks carrying lyrics;
    *           their words stay on stage even when the track is hidden.
    * @property {Array<{beat: object, original: (string[]|null)}>} lyricTransplants -
@@ -36,10 +39,92 @@
     transpose: 0,
     lyricTracks: new Set(),
     lyricTransplants: [],
+    autoTranspose: true, // set from storage below, once its key is defined
   };
+
+  /**
+   * Read the saved auto-transpose choice; on unless explicitly turned off.
+   *
+   * Storage can throw in private windows; the feature then just stays on.
+   *
+   * @returns {boolean} true when auto-transpose is enabled.
+   */
+  function loadAutoTranspose() {
+    try {
+      return localStorage.getItem(AUTO_TRANSPOSE_KEY) !== "0";
+    } catch (e) {
+      return true;
+    }
+  }
+
+  /**
+   * Turn auto-transpose-from-tuning on or off, remembering the choice.
+   *
+   * Only affects the next song load; the current transpose is left as is,
+   * so switching it off never yanks the key out from under the player.
+   *
+   * @param {boolean} on - true to derive transpose from each song's tuning.
+   */
+  function setAutoTranspose(on) {
+    state.autoTranspose = on;
+    try {
+      localStorage.setItem(AUTO_TRANSPOSE_KEY, on ? "1" : "0");
+    } catch (e) {
+      /* storage unavailable: the choice just won't survive a reload */
+    }
+  }
+
+  /**
+   * Work out the transpose that makes a song sound as if played in standard.
+   *
+   * The user plays down-tuned songs (e.g. the D#/Eb folder) on a guitar in
+   * standard tuning by raising playback instead of retuning. That shift is
+   * in the file: compare every tuned, pitched staff string by string with
+   * standard tuning for its string count. A song qualifies only when every
+   * string of every such staff differs by the same amount up to whole
+   * octaves (a 12-string's octave course is still "the same tuning"); the
+   * smallest such shift is the answer (Eb → +1, D standard → +2, A
+   * standard → +7). Anything mixed — Drop D, open tunings, an unknown
+   * string count, one track Eb and another standard — returns null rather
+   * than guessing.
+   *
+   * @param {object} score - alphaTab score (only tracks/staves/tuning read).
+   * @returns {number|null} semitones to transpose playback, or null.
+   */
+  function tuningOffset(score) {
+    const diffs = [];
+    for (const track of score.tracks) {
+      for (const staff of track.staves) {
+        if (staff.isPercussion || !staff.tuning.length) continue;
+        const ref = STANDARD_TUNINGS[staff.tuning.length];
+        if (!ref) return null;
+        staff.tuning.forEach((p, i) => diffs.push(ref[i] - p));
+      }
+    }
+    if (!diffs.length) return null;
+    const mod = (n) => ((n % 12) + 12) % 12;
+    if (!diffs.every((d) => mod(d) === mod(diffs[0]))) return null;
+    return diffs.reduce((best, d) => (Math.abs(d) < Math.abs(best) ? d : best));
+  }
 
   /** Largest playback transpose allowed in either direction, in semitones. */
   const TRANSPOSE_LIMIT = 12;
+
+  /** localStorage key for the auto-transpose-from-tuning toggle ("0" = off). */
+  const AUTO_TRANSPOSE_KEY = "guitarz.autoTranspose";
+
+  /**
+   * Standard tuning per string count, as MIDI pitches in alphaTab's order
+   * (highest string first): 6/7-string guitar and 4/5-string bass.
+   */
+  const STANDARD_TUNINGS = {
+    6: [64, 59, 55, 50, 45, 40],
+    7: [64, 59, 55, 50, 45, 40, 35],
+    4: [43, 38, 33, 28],
+    5: [43, 38, 33, 28, 23],
+  };
+
+  state.autoTranspose = loadAutoTranspose();
 
   /**
    * Palette for string-instrument tracks (guitars, bass, etc.).
@@ -148,9 +233,12 @@
       state.trackColors = applyTrackColors(score);
       titleEl.textContent = [score.title, score.artist].filter(Boolean).join(" — ");
       buildTrackRail(score);
-      // A persisted transpose must carry over to the new score's tracks —
-      // the synth offset is per track-instance, and these are new instances.
-      if (state.transpose !== 0) applyTranspose(state.transpose);
+      // Auto: each song sets its own transpose from its tuning (Eb → +1,
+      // anything mixed → 0). Manual: a persisted transpose carries over to
+      // the new score's tracks — the synth offset is per track-instance,
+      // and these are new instances.
+      if (state.autoTranspose) applyTranspose(tuningOffset(score) ?? 0);
+      else if (state.transpose !== 0) applyTranspose(state.transpose);
       api.renderTracks(score.tracks); // all tracks at once = the conductor view
     });
 
@@ -260,7 +348,10 @@
    * recording, capo practice, accompany a singer), so you keep reading the
    * fingering you know while the band moves key. Values are clamped to
    * ±TRANSPOSE_LIMIT; the clamped value is stored and returned so the UI can
-   * echo reality rather than the request.
+   * echo reality rather than the request. Every change is announced as a
+   * "guitarz:transpose" event on document (detail = the value), so the
+   * transport readout and the fretboard's note names follow it whether the
+   * user or the song's tuning set it.
    *
    * @param {number} semitones - requested offset; may exceed the limit.
    * @returns {number} the clamped offset actually in effect.
@@ -274,6 +365,7 @@
       );
       state.api.changeTrackTranspositionPitch(pitched, clamped);
     }
+    document.dispatchEvent(new CustomEvent("guitarz:transpose", { detail: clamped }));
     return clamped;
   }
 
@@ -524,5 +616,7 @@
     return b;
   }
 
-  Guitarz.conductor = { init, loadFile, overlay, state, applyTranspose };
+  Guitarz.conductor = {
+    init, loadFile, overlay, state, applyTranspose, tuningOffset, setAutoTranspose,
+  };
 })();

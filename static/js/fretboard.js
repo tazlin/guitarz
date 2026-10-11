@@ -201,6 +201,33 @@
     return [...seen.values()].sort((a, b) => a.string - b.string || a.fret - b.fret);
   }
 
+  /**
+   * Name a pitch without its octave, as a dot label.
+   *
+   * On a dot the string already tells the octave, and "C#" fits inside a
+   * dot where "C#4" would not.
+   *
+   * @param {number} midi - MIDI note number.
+   * @returns {string} e.g. "A", "C#".
+   */
+  function pitchName(midi) {
+    return NOTE_NAMES[midi % 12];
+  }
+
+  /**
+   * The playback transpose now in effect, in semitones.
+   *
+   * Pitch labels (string names, note-name dots) add it so they name what
+   * is heard — which, when the user plays an Eb song at +1 on a guitar in
+   * standard, is exactly what their own strings and frets sound. Fret
+   * numbers never change: the tab stays as written.
+   *
+   * @returns {number} the conductor's current transpose.
+   */
+  function transpose() {
+    return Guitarz.conductor.state.transpose || 0;
+  }
+
   /** Live pane state; module-private apart from what the API exposes. */
   const state = {
     api: null,
@@ -211,6 +238,8 @@
     notesLayer: null, // <g> that holds the note dots
     showBar: false, // outline the whole current bar's shape
     lefty: false, // mirror the neck for a left-handed player
+    names: false, // label dots with note names instead of fret numbers
+    tuning: [], // open-string MIDI pitches of the board, top row first
     shownBar: null, // index of the bar whose shape is drawn, if any
   };
 
@@ -227,6 +256,9 @@
   const BAR_KEY = "guitarz.fretBar";
   /** localStorage key remembering the left-handed toggle ("1" = on). */
   const LEFTY_KEY = "guitarz.fretLefty";
+  const namesBtn = document.getElementById("fret-names");
+  /** localStorage key remembering the note-name label toggle ("1" = on). */
+  const NAMES_KEY = "guitarz.fretNames";
 
   /**
    * Read a saved preference; storage may throw in private windows.
@@ -472,6 +504,7 @@
     const theme = THEMES[state.theme] || THEMES[DEFAULT_THEME];
     const geom = geometry(staff, theme.frets || MIN_FRETS);
     state.geom = geom;
+    state.tuning = staff.tuning.slice();
 
     const svg = el("svg", {
       viewBox: `0 0 ${VIEW_W} ${VIEW_H}`,
@@ -519,7 +552,7 @@
       el("line", { class: "fb-string", x1: NUT_X - 26, y1: y, x2: right, y2: y,
         stroke: theme.string, "stroke-width": w }, strings);
       label({ x: LABEL_W - 4, y: y + 4, class: "fb-label", "text-anchor": "end" },
-        strings, noteName(staff.tuning[row]));
+        strings, noteName(staff.tuning[row] + transpose()));
     }
 
     state.notesLayer = el("g", { class: "fb-notes" }, root);
@@ -557,7 +590,10 @@
    *
    * Each dot carries data-string / data-fret for inspection; color comes
    * from the track's rail chip so the board matches the staff it mirrors.
-   * Open strings are rings, dead notes show an ×. Non-live dots get an
+   * The label is the fret number, or the sounding note name (open pitch of
+   * the row + fret + playback transpose, so it follows the track's own
+   * tuning and names what is heard) when the names toggle is on. Open strings are rings, dead notes show an ×. Non-live
+   * dots get an
    * extra class that CSS styles: "next" (faded preview), "bar" (outline
    * of the bar's shape) or "tap" (a clicked spot).
    *
@@ -578,9 +614,11 @@
       state.notesLayer);
     el("circle", { cx: x, cy: y, r, fill: note.fret === 0 ? "none" : color,
       stroke: color, "stroke-width": 2 }, g);
+    let text = note.fret;
+    if (note.isDead) text = "×";
+    else if (state.names) text = pitchName(state.tuning[row] + note.fret + transpose());
     label({ x, y: y + 4, "text-anchor": "middle",
-      class: "fb-note-label" + (note.fret === 0 ? " open" : "") }, g,
-      note.isDead ? "×" : note.fret);
+      class: "fb-note-label" + (note.fret === 0 ? " open" : "") }, g, text);
   }
 
   /**
@@ -778,6 +816,17 @@
       state.showBar = barBtn.classList.toggle("on");
       save(BAR_KEY, state.showBar ? "1" : "0");
     };
+    // Pitch labels include the transpose, so redraw when it changes.
+    document.addEventListener("guitarz:transpose", () => {
+      if (state.shown) drawBoard();
+    });
+    state.names = load(NAMES_KEY) === "1";
+    namesBtn.classList.toggle("on", state.names);
+    namesBtn.onclick = () => {
+      state.names = namesBtn.classList.toggle("on");
+      save(NAMES_KEY, state.names ? "1" : "0");
+      if (state.shown) drawBoard();
+    };
     state.lefty = load(LEFTY_KEY) === "1";
     leftyBtn.classList.toggle("on", state.lefty);
     leftyBtn.onclick = () => {
@@ -795,6 +844,6 @@
   }
 
   Guitarz.fretboard = {
-    init, fretPosition, inlayFrets, stringRow, noteName, upcomingBeat, barShape, playPosition, THEMES, state,
+    init, fretPosition, inlayFrets, stringRow, noteName, pitchName, upcomingBeat, barShape, playPosition, THEMES, state,
   };
 })();

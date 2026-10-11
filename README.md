@@ -19,13 +19,34 @@ hardware or drivers needed.
 - **Clean tab by default** — rhythm stems/beams ("tails") under the tab are hidden;
   the transport's `tails` button brings them back for full rhythm notation
 - **Transpose** — shift playback up to ±12 semitones while the tab stays exactly as
-  written (play along with detuned recordings, capo practice); drums are unaffected,
-  and the setting survives switching songs. Click the readout to reset to +0.
+  written (play along with detuned recordings, capo practice); drums are unaffected.
+  Click the readout to reset to +0.
+- **Auto transpose from tuning** — with `auto` on (the default), each song sets
+  transpose from its own tuning, so you can play it on a guitar in standard tuning:
+  a half-step-down (Eb/D#) song plays at +1, a D-standard song at +2, a standard
+  song at 0. It only acts when every pitched track is shifted by the same amount;
+  Drop D and other mixed tunings get 0. The fretboard's note names follow it, so an
+  Eb song's open low string reads "E". With `auto` off, the transpose you set stays
+  the same when you switch songs.
 - **SoundFont menu** — pick the instrument sounds from the transport bar and compare
   them on the same song: MuseScore General (default), GeneralUser GS, or the tiny
   Sonivox fallback. Switching reloads the synth in place (song, loop, speed and
   transpose are kept) and the choice is remembered per browser. Any `.sf2`/`.sf3`
   dropped into `static/vendor/alphatab/soundfont/` appears in the menu too.
+- **Fretboard pane** — the transport's `fretboard` button shows a guitar neck under
+  the score that lights up the notes of one string track as it plays (pick the
+  track in the pane). It follows each track's own tuning (Drop D, DADGAD, 4/5-string
+  bass, …). In the pane:
+  - faded dots preview the next notes to play
+  - `bar` outlines every position the current bar uses (the chord shape or box)
+  - `names` labels the dots with note names (A, C#, …) instead of fret numbers
+  - `lefty` mirrors the neck for left-handed players
+  - click a string at any fret (song stopped or paused) to hear that note
+  - looks: rosewood/dots, ebony/diamonds, maple/blocks, and a 24-fret rosewood
+    with a white tree-of-life vine (JEM style). Looks are plain data in `THEMES`
+    in `static/js/fretboard.js`, so adding one is a small edit.
+
+  All pane choices are remembered per browser.
 - **Count-in** — one bar of clicks before playback (toggleable, on by default)
 - **Per-track rail** — mute, solo, volume fader, and show/hide (eye) per track.
   Hiding a track that carries lyrics (the vocal track) removes its confusing tab
@@ -73,9 +94,15 @@ guitarz serves `$GUITARZ_ROOT`, or `~/gps` when it is not set. Put this in
 export GUITARZ_ROOT=~/gps
 ```
 
+If `GUITARZ_ROOT` names a folder that does not exist (for example a stale value
+left in a long-running VS Code server under WSL), guitarz prints a warning and
+uses `~/gps`. To clear a stale value for good, run `wsl --shutdown` from Windows
+and reopen VS Code.
+
 `gps/` is gitignored, so a stray copy in the project folder is never committed.
-The browser smoke test copies its sample songs (Funk #49, Children Of The Sea)
-from this folder and skips if they are not there.
+The browser smoke test copies its sample songs (Funk #49, Children Of The Sea,
+and the first song in a `DropD` folder) from this folder and skips the tests
+that need a song it cannot find.
 
 ## Run
 

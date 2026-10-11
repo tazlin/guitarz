@@ -23,6 +23,7 @@
     <button id="btn-transpose-down" class="tbtn step" title="Down one semitone">&#8722;</button>
     <span id="transpose-val" title="Click to reset to original key">+0</span>
     <button id="btn-transpose-up" class="tbtn step" title="Up one semitone">+</button>
+    <button id="btn-transpose-auto" class="tbtn toggle small" title="Set transpose from each song's tuning (e.g. Eb tuning → +1, so a standard-tuned guitar matches)">auto</button>
   </span>
   <select id="soundfont" title="Playback SoundFont (instrument sounds)" disabled></select>
   <button id="btn-fretboard" class="tbtn toggle" title="Show/hide the fretboard pane">fretboard</button>
@@ -57,6 +58,7 @@
         <select id="fret-track" title="Track shown on the fretboard" disabled></select>
         <select id="fret-theme" title="Fretboard look"></select>
         <button id="fret-bar" class="tbtn toggle small" title="Outline every position the current bar uses">bar</button>
+        <button id="fret-names" class="tbtn toggle small" title="Label dots with note names instead of fret numbers">names</button>
         <button id="fret-lefty" class="tbtn toggle small" title="Mirror the neck for a left-handed player">lefty</button>
       </div>
       <div id="fretboard"></div>

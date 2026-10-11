@@ -20,6 +20,7 @@
   const btnTransposeDown = document.getElementById("btn-transpose-down");
   const btnTransposeUp = document.getElementById("btn-transpose-up");
   const transposeVal = document.getElementById("transpose-val");
+  const btnTransposeAuto = document.getElementById("btn-transpose-auto");
   const posBar = document.getElementById("pos-bar");
   const posTime = document.getElementById("pos-time");
   const progress = document.getElementById("progress");
@@ -153,24 +154,31 @@
     };
 
     /**
-     * Push a transpose request to the conductor and echo the clamped result.
+     * Render the transpose readout for the value actually in effect.
      *
-     * The conductor owns the value (it re-applies it on song changes and
-     * clamps to its ±12 range); the transport only renders what actually took
-     * effect — a true minus sign for flats-direction, accent color when the
-     * band is off its original key.
+     * The conductor owns the value (it clamps to ±12, and auto-transpose
+     * sets it on song load) and announces every change with a
+     * "guitarz:transpose" event; the readout listens rather than echoing
+     * clicks, so a value set by the song's tuning shows up too. A true minus
+     * sign for flats-direction, accent color when the band is off its
+     * original key.
      *
-     * @param {number} semitones - requested global offset.
+     * @param {number} n - the offset in effect, in semitones.
      */
-    function setTranspose(semitones) {
-      const n = Guitarz.conductor.applyTranspose(semitones);
+    function showTranspose(n) {
       transposeVal.textContent = n < 0 ? "−" + -n : "+" + n;
       transposeVal.classList.toggle("active", n !== 0);
     }
 
-    btnTransposeDown.onclick = () => setTranspose(Guitarz.conductor.state.transpose - 1);
-    btnTransposeUp.onclick = () => setTranspose(Guitarz.conductor.state.transpose + 1);
-    transposeVal.onclick = () => setTranspose(0);
+    document.addEventListener("guitarz:transpose", (e) => showTranspose(e.detail));
+    const apply = Guitarz.conductor.applyTranspose;
+    btnTransposeDown.onclick = () => apply(Guitarz.conductor.state.transpose - 1);
+    btnTransposeUp.onclick = () => apply(Guitarz.conductor.state.transpose + 1);
+    transposeVal.onclick = () => apply(0);
+
+    btnTransposeAuto.classList.toggle("on", Guitarz.conductor.state.autoTranspose);
+    btnTransposeAuto.onclick = () =>
+      Guitarz.conductor.setAutoTranspose(btnTransposeAuto.classList.toggle("on"));
 
     progress.onclick = (ev) => {
       if (!endTime) return;

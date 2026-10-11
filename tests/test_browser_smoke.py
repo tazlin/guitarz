@@ -82,6 +82,41 @@ def _find_lyric_sample() -> Path | None:
 
 LYRIC_GP = _find_lyric_sample()
 
+
+def _find_dropd_sample() -> Path | None:
+    """Locate a song from the collection's Drop D folder.
+
+    The collection is sorted by tuning into subfolders, so any ``.gp`` file
+    under a ``DropD`` folder should carry at least one guitar track with the
+    low string tuned down to D. The first one by name is used so the choice
+    is stable between runs; the dependent test skips when there is none.
+
+    Returns:
+        Path to a Drop D ``.gp`` file, or None when not found.
+    """
+    found = sorted(MUSIC_ROOT.glob("**/DropD/*.gp"))
+    return found[0] if found else None
+
+
+DROPD_GP = _find_dropd_sample()
+
+
+def _find_eb_sample() -> Path | None:
+    """Locate a song from the collection's ``D#`` (Eb, half-step-down) folder.
+
+    Songs there are tuned a half step down on every pitched track, which
+    is what the auto-transpose feature must detect (+1 to play along on a
+    standard-tuned guitar). The first file by name keeps the choice stable.
+
+    Returns:
+        Path to an Eb-tuned ``.gp`` file, or None when not found.
+    """
+    found = sorted(MUSIC_ROOT.glob("**/D#/*.gp"))
+    return found[0] if found else None
+
+
+EB_GP = _find_eb_sample()
+
 CHROME = (
     shutil.which("google-chrome")
     or shutil.which("chromium")
@@ -129,6 +164,10 @@ def live_server(tmp_path_factory):
     shutil.copy(SAMPLE_GP, root / SAMPLE_GP.name)
     if LYRIC_GP is not None:
         shutil.copy(LYRIC_GP, root / LYRIC_GP.name)
+    if DROPD_GP is not None:
+        shutil.copy(DROPD_GP, root / DROPD_GP.name)
+    if EB_GP is not None:
+        shutil.copy(EB_GP, root / EB_GP.name)
     port = _free_port()
     server = uvicorn.Server(
         uvicorn.Config(
@@ -500,7 +539,11 @@ def test_global_transpose_stepper(live_server):
             )
             assert await cdp.js("Guitarz.conductor.state.transpose") == -12
 
-            # Persistence: reload the song; the -12 must be re-applied automatically.
+            # Persistence: with auto-from-tuning off, reload the song; the -12
+            # must be re-applied automatically. (With auto on, each song sets
+            # its own value instead — see test_auto_transpose_from_tuning.)
+            await cdp.js("document.getElementById('btn-transpose-auto').click()")
+            assert await cdp.js("Guitarz.conductor.state.autoTranspose") is False
             await cdp.js("window.__transposeCalls = []")
             await cdp.js(f"""Guitarz.conductor.loadFile({{
                 path: {json.dumps(SAMPLE_GP.name)}, name: {json.dumps(SAMPLE_GP.name)}}})""")
@@ -1038,6 +1081,221 @@ def test_fretboard_bass_neck_and_left_handed_mirror(live_server):
             await wait_ready(cdp)
             again = await layout()
             assert again["lefty"] and again["lit"], again
+
+    asyncio.run(scenario())
+
+
+def test_fretboard_dot_labels_toggle_fret_or_note_name(live_server):
+    """The ``names`` toggle switches dot labels between fret numbers and notes.
+
+    Fret numbers say where the finger goes; note names teach the neck. Spec:
+    (1) ``pitchName(midi)`` names a pitch without its octave (69 = "A",
+    61 = "C#"); (2) the ``#fret-names`` toggle starts off, so a clicked dot
+    at string 6 (top row) fret 5 reads "5"; (3) switched on, the same dot
+    reads the note it sounds — the top row's open pitch + 5 — and the
+    board redraws at once; (4) the choice persists across a reload.
+    """
+
+    async def scenario():
+        async with chrome_page(_song_url(live_server)) as cdp:
+            await wait_ready(cdp)
+            names = await cdp.js("[69, 61, 64, 40].map(Guitarz.fretboard.pitchName)")
+            assert names == ["A", "C#", "E", "E"], names
+
+            async def tap_label():
+                """Click string 6 fret 5 and return what the flashed dot reads."""
+                return await cdp.js("""(() => {
+                    document.querySelector('#fretboard .fb-hit[data-string="6"][data-fret="5"]')
+                        .dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                    const dots = document.querySelectorAll('#fretboard .fb-note.tap');
+                    return dots[dots.length - 1].textContent;
+                })()""")
+
+            await cdp.js("""(() => {
+                if (document.getElementById('fretpane').hidden)
+                    document.getElementById('btn-fretboard').click();
+            })()""")
+            assert await cdp.js(
+                "document.getElementById('fret-names').classList.contains('on')") is False
+            assert await tap_label() == "5"
+
+            await cdp.js("document.getElementById('fret-names').click()")
+            want = await cdp.js("""(() => {
+                const fb = Guitarz.fretboard;
+                const track = Guitarz.conductor.state.score.tracks[fb.state.trackIndex];
+                const staff = track.staves.find(s => !s.isPercussion && s.tuning.length > 0);
+                return fb.pitchName(staff.tuning[0] + 5);
+            })()""")
+            assert await tap_label() == want
+
+            await cdp.send("Page.reload")
+            await wait_ready(cdp)
+            assert await cdp.js(
+                "document.getElementById('fret-names').classList.contains('on')") is True
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.skipif(DROPD_GP is None, reason="no Drop D .gp song found in music root")
+def test_fretboard_drop_d_tuning(live_server):
+    """A Drop D song gets a neck labeled and played in Drop D.
+
+    The neck must follow each track's own tuning, not assume standard.
+    Spec, on a file from the collection's DropD folder: (1) some string
+    track is in Drop D — low string D2 (MIDI 38), the rest standard
+    (A2 D3 G3 B3 E4); (2) choosing it labels the bottom string "D2";
+    (3) the dot mapping holds for that tuning (top-row tuning + fret
+    equals alphaTab's own ``realValue`` for the track's notes); and
+    (4) with note names on, the open low string reads "D".
+    """
+
+    async def scenario():
+        async with chrome_page(
+            f"{live_server}/?open={urllib.parse.quote(DROPD_GP.name)}"
+        ) as cdp:
+            await wait_ready(cdp)
+            raw = await cdp.js("""(() => {
+                const fb = Guitarz.fretboard;
+                const DROP_D = [64, 59, 55, 50, 45, 38];
+                const track = Guitarz.conductor.state.score.tracks.find(t => t.staves.some(
+                    s => !s.isPercussion && s.tuning.join() === DROP_D.join()));
+                if (!track) return JSON.stringify({track: null});
+                if (document.getElementById('fretpane').hidden)
+                    document.getElementById('btn-fretboard').click();
+                if (!document.getElementById('fret-names').classList.contains('on'))
+                    document.getElementById('fret-names').click();
+                const sel = document.getElementById('fret-track');
+                sel.value = track.index;
+                sel.dispatchEvent(new Event('change'));
+                const staff = track.staves.find(s => s.tuning.join() === DROP_D.join());
+                let match = 0, total = 0;
+                for (const bar of staff.bars) for (const v of bar.voices)
+                    for (const b of v.beats) for (const n of b.notes) {
+                        if (n.isDead || n.harmonicType) continue;
+                        total++;
+                        if (staff.tuning[fb.stringRow(n.string, 6)] + n.fret === n.realValue) match++;
+                    }
+                document.querySelector('#fretboard .fb-hit[data-string="1"][data-fret="0"]')
+                    .dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                const labels = [...document.querySelectorAll('#fretboard .fb-label')];
+                return JSON.stringify({
+                    track: track.name,
+                    bottom: labels[labels.length - 1].textContent,
+                    open: [...document.querySelectorAll('#fretboard .fb-note.tap')].pop().textContent,
+                    match, total});
+            })()""", gesture=True)
+            data = json.loads(raw)
+            assert data["track"], f"no Drop D track in {DROPD_GP.name}: {data}"
+            assert data["bottom"] == "D2", data
+            assert data["total"] > 0 and data["match"] / data["total"] > 0.95, data
+            assert data["open"] == "D", data
+
+    asyncio.run(scenario())
+
+
+def test_tuning_offset_rule(live_server):
+    """``tuningOffset`` finds the transpose that makes a song sound in standard.
+
+    Pure rule, checked on synthetic scores so every case is explicit: every
+    tuned, pitched staff is compared string by string with standard tuning
+    for its string count (6/7-string guitar, 4/5-string bass). The song
+    gets an offset only when every string of every such staff is off by the
+    same amount, allowing whole octaves (a 12-string's octave course).
+    Then the smallest such shift is returned: Eb → +1, D standard → +2,
+    standard → 0, A standard → +7. Mixed tunings (Drop D, or one track Eb
+    and one standard) and songs with no tuned track return null — no guess.
+    """
+
+    async def scenario():
+        async with chrome_page(live_server + "/") as cdp:
+            for _ in range(40):
+                if await cdp.js("!!(window.Guitarz && Guitarz.conductor)"):
+                    break
+                await asyncio.sleep(0.25)
+            raw = await cdp.js("""(() => {
+                const st = t => ({isPercussion: false, tuning: t});
+                const drums = {isPercussion: true, tuning: []};
+                const song = (...tunings) => ({tracks: tunings.map(
+                    t => ({staves: [t === null ? drums : st(t)]}))});
+                const off = Guitarz.conductor.tuningOffset;
+                const STD = [64, 59, 55, 50, 45, 40], BASS = [43, 38, 33, 28];
+                const down = (t, n) => t.map(p => p - n);
+                return JSON.stringify({
+                    eb: off(song(down(STD, 1), down(BASS, 1), down(STD.map(p => p + 12), 1), null)),
+                    d: off(song(down(STD, 2))),
+                    std: off(song(STD, BASS, null)),
+                    a: off(song(down(STD, 7))),
+                    bass5: off(song(down([43, 38, 33, 28, 23], 1))),
+                    seven: off(song(down([64, 59, 55, 50, 45, 40, 35], 1))),
+                    dropD: off(song([64, 59, 55, 50, 45, 38])),
+                    mixed: off(song(down(STD, 1), STD)),
+                    none: off(song(null)),
+                });
+            })()""")
+            assert json.loads(raw) == {
+                "eb": 1, "d": 2, "std": 0, "a": 7, "bass5": 1, "seven": 1,
+                "dropD": None, "mixed": None, "none": None,
+            }, raw
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.skipif(EB_GP is None, reason="no Eb (D#) .gp song found in music root")
+def test_auto_transpose_from_tuning(live_server):
+    """Loading a half-step-down song sets transpose to +1 by itself.
+
+    The user plays Eb-tuned songs on a standard-tuned guitar by raising
+    playback a semitone. Spec: (1) auto is on by default (``auto`` button
+    lit); (2) loading a song from the D# folder sets transpose to +1 and
+    the readout shows "+1"; (3) with note names on, the fretboard names the
+    notes the standard guitar plays — the open low string reads "E", and
+    the bottom string label "E2"; (4) loading a standard song sets 0 again;
+    (5) turning auto off leaves transpose alone on the next load, and the
+    off choice survives a reload.
+    """
+
+    eb_url = f"{live_server}/?open={urllib.parse.quote(EB_GP.name)}"
+
+    async def scenario():
+        async with chrome_page(eb_url) as cdp:
+            await wait_ready(cdp)
+            raw = await cdp.js("""(() => {
+                if (document.getElementById('fretpane').hidden)
+                    document.getElementById('btn-fretboard').click();
+                if (!document.getElementById('fret-names').classList.contains('on'))
+                    document.getElementById('fret-names').click();
+                document.querySelector('#fretboard .fb-hit[data-string="1"][data-fret="0"]')
+                    .dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                const labels = [...document.querySelectorAll('#fretboard .fb-label')];
+                return JSON.stringify({
+                    auto: document.getElementById('btn-transpose-auto').classList.contains('on'),
+                    transpose: Guitarz.conductor.state.transpose,
+                    readout: document.getElementById('transpose-val').textContent,
+                    open: [...document.querySelectorAll('#fretboard .fb-note.tap')].pop().textContent,
+                    bottom: labels[labels.length - 1].textContent});
+            })()""", gesture=True)
+            assert json.loads(raw) == {
+                "auto": True, "transpose": 1, "readout": "+1", "open": "E", "bottom": "E2",
+            }, raw
+
+            await cdp.js(f"""Guitarz.conductor.loadFile({{
+                path: {json.dumps(SAMPLE_GP.name)}, name: {json.dumps(SAMPLE_GP.name)}}})""")
+            await wait_ready(cdp)
+            assert await cdp.js("Guitarz.conductor.state.transpose") == 0
+            assert await cdp.js("document.getElementById('transpose-val').textContent") == "+0"
+
+            await cdp.js("document.getElementById('btn-transpose-auto').click()")
+            await cdp.js(f"""Guitarz.conductor.loadFile({{
+                path: {json.dumps(EB_GP.name)}, name: {json.dumps(EB_GP.name)}}})""")
+            await wait_ready(cdp)
+            assert await cdp.js("Guitarz.conductor.state.transpose") == 0
+
+            await cdp.send("Page.reload")
+            await wait_ready(cdp)
+            off = json.loads(await cdp.js("""JSON.stringify({
+                lit: document.getElementById('btn-transpose-auto').classList.contains('on'),
+                transpose: Guitarz.conductor.state.transpose})"""))
+            assert off == {"lit": False, "transpose": 0}, off
 
     asyncio.run(scenario())
 
