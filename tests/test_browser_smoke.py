@@ -386,6 +386,36 @@ def test_static_catalog_render_and_play(static_server):
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("server_fixture", ["static_server", "live_server"])
+def test_asset_license_dialog(request, server_fixture):
+    """Licenses are accessible before loading a song in both deployment modes.
+
+    Check that the dialog lists the core assets and integrated libraries,
+    serves every local license link, and returns focus when dismissed.
+    """
+    base = request.getfixturevalue(server_fixture)
+
+    async def scenario():
+        """Open the info dialog and follow its bundled license links."""
+        async with chrome_page(base + "/") as cdp:
+            for _ in range(50):
+                if await cdp.js("Boolean(document.getElementById('btn-info')?.onclick)"):
+                    break
+                await asyncio.sleep(0.1)
+            await cdp.js("document.getElementById('btn-info').click()", gesture=True)
+            assert await cdp.js("document.getElementById('asset-info').open")
+            text = await cdp.js("document.getElementById('asset-info').textContent")
+            for name in ("alphaTab", "MPL-2.0", "Bravura", "SIL Open Font License", "Sonivox", "Apache-2.0", "TinySoundFont", "libvorbis"):
+                assert name in text
+            assert await cdp.js("Array.from(document.querySelectorAll('#asset-info a[href^=\"/\"]')).length") >= 5
+            assert await cdp.js("(async () => { const links = document.querySelectorAll('#asset-info a[href^=\"/\"]'); for (const link of links) { if (link.closest('[hidden]')) continue; const res = await fetch(link.href); if (!res.ok || !(await res.text()).length) return false; } return true; })()")
+            await cdp.js("document.getElementById('asset-info-close').click()", gesture=True)
+            assert not await cdp.js("document.getElementById('asset-info').open")
+            assert await cdp.js("document.activeElement.id") == "btn-info"
+
+    asyncio.run(scenario())
+
+
 def test_load_render_and_play(live_server):
     """The whole app works end-to-end: render all tracks, then really play.
 

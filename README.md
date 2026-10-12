@@ -105,6 +105,12 @@ Use `--output <directory>` for an alternative destination. Serve the site over
 HTTP(S), rather than opening `index.html` with a `file://` URL. Deploy at the
 domain root, since asset paths start with `/`.
 
+The transport's info button opens the asset licenses and credits, including
+alphaTab's integrated libraries, Bravura, and Sonivox. Full license texts are
+included in the export, with a link to the corresponding alphaTab source.
+Optional SoundFont credits appear when those fonts are available on the local
+server. See `static/licenses/README.md` for notice provenance and upgrade notes.
+
 ## Development
 
 This project is TDD: write the failing test first, then the code (see

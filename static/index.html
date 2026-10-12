@@ -9,6 +9,7 @@
 <body>
 <header id="transport">
   <span id="logo">guitarz</span>
+  <button id="btn-info" class="tbtn small" type="button" aria-label="Asset licenses and credits" title="Asset licenses and credits" aria-haspopup="dialog">&#9432;</button>
   <button id="btn-play" class="tbtn big" title="Play / pause (space)" disabled>&#9654;</button>
   <button id="btn-stop" class="tbtn" title="Stop" disabled>&#9632;</button>
   <button id="btn-countin" class="tbtn toggle on" title="One-bar count-in before playback">1·2·3·4</button>
@@ -66,6 +67,47 @@
   </div>
 </div>
 
+<dialog id="asset-info" aria-labelledby="asset-info-title">
+  <div class="info-heading">
+    <h2 id="asset-info-title">Licenses &amp; credits</h2>
+    <button id="asset-info-close" class="tbtn small" type="button" aria-label="Close licenses and credits" autofocus>Close</button>
+  </div>
+  <p>guitarz uses the following third-party assets. Full license texts and copyright notices are linked below.</p>
+  <ul class="asset-credits">
+    <li><strong>alphaTab 1.8.4</strong> — notation rendering and playback.<br>
+      Copyright © 2026 Daniel Kuschny and Contributors.<br>
+      <a href="/licenses/alphaTab.txt">MPL-2.0 license</a> ·
+      <a href="/licenses/alphaTab-NOTICES.txt">Original bundle notices</a> ·
+      <a href="https://github.com/CoderLine/alphaTab/tree/022a45c8e42370f9e12e68949d11eada370da83d" target="_blank" rel="noopener">Corresponding source code</a>
+    </li>
+    <li><strong>Bravura</strong> — music notation font.<br>
+      Copyright © 2015 Steinberg Media Technologies GmbH. Reserved Font Name: Bravura.<br>
+      <a href="/vendor/alphatab/font/Bravura-OFL.txt">SIL Open Font License 1.1</a>
+    </li>
+    <li><strong>Sonivox</strong> — instrument SoundFont.<br>
+      Copyright (c) 2004–2006 Sonic Network Inc.<br>
+      <a href="/licenses/Apache-2.0.txt">Apache-2.0 license</a> ·
+      <a href="/vendor/alphatab/soundfont/LICENSE">Original SoundFont notice</a>
+    </li>
+  </ul>
+  <details>
+    <summary>Libraries integrated into alphaTab</summary>
+    <p>TinySoundFont (Bernhard Schelling), SFZero (Steve Folta), Haxe Standard Library (Haxe Foundation), SharpZipLib (contributors), and NVorbis (Andrew Ward) use the <a href="/licenses/integrated-MIT.txt">MIT license</a>.</p>
+    <p>libvorbis (Xiph.org Foundation) uses the <a href="/licenses/libvorbis.txt">BSD-3-Clause license</a>.</p>
+    <p>See the <a href="/licenses/alphaTab-NOTICES.txt">original bundle notices</a> for individual copyrights and project links.</p>
+  </details>
+  <ul id="optional-font-credits" class="asset-credits" hidden>
+    <li id="musescore-credit" hidden><strong>MuseScore General</strong> — optional SoundFont.<br>
+      Credits include Frank Wen, Michael Cowgill, S. Christian Collins, Ethan Winer, and Michael Schorsch.<br>
+      <a href="/vendor/alphatab/soundfont/MuseScore_General_License.md">MIT license, credits, and sample notices</a>
+    </li>
+    <li id="generaluser-credit" hidden><strong>GeneralUser GS</strong> — optional SoundFont by S. Christian Collins.<br>
+      <a href="/vendor/alphatab/soundfont/GeneralUser-GS_LICENSE.txt">GeneralUser GS license and sample notices</a>
+    </li>
+  </ul>
+</dialog>
+
+<script src="/js/info.js"></script>
 <script src="/vendor/alphatab/alphaTab.min.js"></script>
 <script src="/js/explorer.js"></script>
 <script src="/js/conductor.js"></script>

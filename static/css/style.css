@@ -314,6 +314,28 @@ html, body {
 .at-highlight * { fill: var(--accent); stroke: var(--accent); }
 
 /* slim scrollbars */
+#btn-info { flex-shrink: 0; padding: 3px 8px; }
+#asset-info {
+  margin: auto;
+  width: min(600px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 22px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+#asset-info::backdrop { background: rgba(0, 0, 0, 0.65); }
+.info-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+#asset-info h2 { font-size: 18px; }
+#asset-info p { margin: 12px 0; }
+#asset-info a { color: var(--accent); }
+.asset-credits { list-style: none; }
+.asset-credits li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+#asset-info details { margin-top: 16px; }
+#asset-info summary { cursor: pointer; }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
