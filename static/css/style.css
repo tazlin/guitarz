@@ -150,6 +150,9 @@ html, body {
 #library-source { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px; margin: 0 4px 6px; }
 #btn-clear-library { font-size: 11px; padding: 4px 6px; }
 .library-hint { color: var(--text-dim); font-size: 11px; margin-top: 3px; }
+#import-help { margin: 0 0 10px; }
+#import-help p + p { margin-top: 5px; }
+#import-help code { font-size: inherit; }
 #library-status { color: var(--accent); font-size: 11px; margin-top: 4px; }
 #library-status:empty { display: none; }
 #filelist .file { position: relative; }
@@ -331,7 +334,8 @@ html, body {
 .at-highlight * { fill: var(--accent); stroke: var(--accent); }
 
 /* slim scrollbars */
-#btn-info { flex-shrink: 0; padding: 3px 8px; }
+#btn-info { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 5px 8px; }
+#btn-info svg { display: block; flex-shrink: 0; }
 #asset-info {
   margin: auto;
   width: min(600px, calc(100vw - 32px));
