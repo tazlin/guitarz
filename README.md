@@ -73,6 +73,38 @@ The last step is required: without it the page cannot find the alphaTab player
 and every song fails to load. To try the app without your own tabs, run
 `GUITARZ_ROOT=samples .venv/bin/guitarz` to browse the bundled sample songs.
 
+## Static deployment (Cloudflare)
+
+Build a fully static version with the original bundled sample songs and the
+lightweight Sonivox SoundFont. Python is used only to generate the export;
+the deployed website needs no backend, database, or Functions.
+
+```bash
+bash scripts/fetch_vendor.sh --core
+python -m guitarz.static_build
+python -m http.server 8080 --directory dist/static
+```
+
+Open <http://localhost:8080> to preview, or upload the **contents of `dist/static/`**
+to Cloudflare Pages. For Git-based Pages deployments set:
+
+- **Build command:** `bash scripts/fetch_vendor.sh --core && python -m guitarz.static_build`
+- **Build output directory:** `dist/static`
+
+The output includes `catalog.json`, `soundfonts.json`, and static song files.
+Folder navigation and `/?open=guitarz-demo.gp5` deep links work without an API.
+Only Sonivox is exported, even if richer SoundFonts exist locally. Builds use
+`samples/`, never `$GUITARZ_ROOT` or your private collection. The existing
+Python server still supports your collection.
+
+Re-run the same build command to refresh `dist/static/`. The builder stages a
+complete export before replacing the previous generated site, removes obsolete
+generated files, and leaves other deployment artifacts under `dist/` untouched.
+It refuses to replace unrelated folders or builds containing unmanaged files.
+Use `--output <directory>` for an alternative destination. Serve the site over
+HTTP(S), rather than opening `index.html` with a `file://` URL. Deploy at the
+domain root, since asset paths start with `/`.
+
 ## Development
 
 This project is TDD: write the failing test first, then the code (see

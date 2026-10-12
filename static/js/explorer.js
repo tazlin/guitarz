@@ -12,6 +12,7 @@
   const listEl = document.getElementById("filelist");
   let onOpenFile = null;
   let selectedPath = null;
+  let staticCatalog = null;
 
   /**
    * Format a byte count for the file list's size hint.
@@ -39,14 +40,26 @@
    * @returns {Promise<void>} resolves after the panel is re-rendered.
    */
   async function browse(path) {
-    const res = await fetch("/api/browse?path=" + encodeURIComponent(path || ""));
-    if (!res.ok) {
+    try {
+      let data;
+      if (window.GuitarzStatic) {
+        if (!staticCatalog) {
+          const res = await fetch("/catalog.json");
+          if (!res.ok) throw new Error("catalog unavailable");
+          staticCatalog = await res.json();
+        }
+        data = Object.hasOwn(staticCatalog, path || "") ? staticCatalog[path || ""] : null;
+        if (!data) throw new Error("directory not found");
+      } else {
+        const res = await fetch("/api/browse?path=" + encodeURIComponent(path || ""));
+        if (!res.ok) throw new Error("directory unavailable");
+        data = await res.json();
+      }
+      renderBreadcrumb(data.path);
+      renderList(data);
+    } catch (e) {
       listEl.innerHTML = "<li>error loading directory</li>";
-      return;
     }
-    const data = await res.json();
-    renderBreadcrumb(data.path);
-    renderList(data);
   }
 
   /**

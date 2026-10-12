@@ -21,7 +21,7 @@
    */
   async function fetchSoundFonts() {
     try {
-      const res = await fetch("/api/soundfonts");
+      const res = await fetch(window.GuitarzStatic ? "/soundfonts.json" : "/api/soundfonts");
       if (!res.ok) throw new Error("server returned " + res.status);
       return await res.json();
     } catch (e) {

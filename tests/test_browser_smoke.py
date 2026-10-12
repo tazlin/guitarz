@@ -11,6 +11,8 @@ so the fast unit loop (``pytest -m "not browser"``) never depends on them.
 
 import asyncio
 import contextlib
+import functools
+import http.server
 import json
 import os
 import shutil
@@ -27,6 +29,7 @@ import uvicorn
 
 from guitarz.__main__ import default_root
 from guitarz.server import create_app
+from guitarz.static_build import build_static
 
 # Defined here rather than imported from conftest: conftest is pytest-loaded,
 # and importing it as a module can resolve to an unrelated `tests` package
@@ -325,6 +328,62 @@ def _song_url(live_server: str) -> str:
         The app URL with the ``?open=`` query for the sample file.
     """
     return f"{live_server}/?open={urllib.parse.quote(SAMPLE_GP.name)}"
+
+
+@pytest.fixture(scope="module")
+def static_server(tmp_path_factory):
+    """Serve the export with a plain HTTP server, without FastAPI or API routes.
+
+    This verifies deployment behavior against the generated artifact rather
+    than accidentally letting the development backend fulfill API requests.
+
+    Yields:
+        Base URL of the static-only server.
+    """
+    output = build_static(tmp_path_factory.mktemp("static-export"))
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(output))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_static_catalog_render_and_play(static_server):
+    """Static catalogs, explorer selection, deep links and playback need no API.
+
+    Inspect actual browser requests to ensure the static branch does not call
+    the Python endpoints, then exercise both deep-link and explorer loading.
+    """
+
+    async def scenario():
+        """Drive the exported site and check real rendering and audio progress."""
+        async with chrome_page(_song_url(static_server)) as cdp:
+            status = await wait_ready(cdp)
+            assert status["rows"] == 7
+            assert status["playEnabled"]
+            assert await cdp.js("document.getElementById('soundfont').value") == "sonivox.sf2"
+            assert await cdp.js("document.querySelectorAll('#filelist li.file').length") == 5
+            await cdp.js("document.getElementById('btn-play').click()", gesture=True)
+            await asyncio.sleep(8)
+            assert await cdp.js("Guitarz.conductor.state.api.playerState") == 1
+            assert not (await cdp.js("document.getElementById('pos-time').textContent")).startswith("0:00 /")
+            await cdp.js("document.getElementById('btn-stop').click()", gesture=True)
+            await cdp.js("Array.from(document.querySelectorAll('#filelist li.file')).find(el => el.textContent.startsWith('guitarz-eb.gp5')).click()")
+            await wait_ready(cdp)
+            assert await cdp.js("Guitarz.conductor.state.transpose") == 1
+            paths = json.loads(await cdp.js("JSON.stringify(performance.getEntriesByType('resource').map(e => new URL(e.name).pathname))"))
+            assert not any(path.startswith("/api/") for path in paths)
+            assert "/catalog.json" in paths
+            assert "/soundfonts.json" in paths
+            assert "/songs/guitarz-demo.gp5" in paths
+            assert "/songs/guitarz-eb.gp5" in paths
+
+    asyncio.run(scenario())
 
 
 def test_load_render_and_play(live_server):
