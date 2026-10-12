@@ -40,6 +40,22 @@
   <aside id="sidebar">
     <section id="explorer">
       <h2>Files</h2>
+      <div id="library-controls">
+        <div class="import-actions">
+          <button id="btn-import-files" class="tbtn small" type="button" disabled>Open files</button>
+          <button id="btn-import-folder" class="tbtn small" type="button" disabled>Open folder</button>
+        </div>
+        <input id="import-files" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx" multiple hidden>
+        <input id="import-folder" type="file" webkitdirectory multiple hidden>
+        <label for="library-source">Browse</label>
+        <select id="library-source" disabled>
+          <option value="remote">Samples</option>
+          <option value="local">My library</option>
+        </select>
+        <button id="btn-clear-library" class="tbtn small" type="button" disabled>Clear library</button>
+        <p class="library-hint">Imported songs stay in this browser. Keep your original files.</p>
+        <p id="library-status" role="status" aria-live="polite"></p>
+      </div>
       <nav id="breadcrumb"></nav>
       <ul id="filelist"></ul>
     </section>
@@ -66,6 +82,15 @@
     </section>
   </div>
 </div>
+
+<dialog id="clear-library-dialog" aria-labelledby="clear-library-title">
+  <h2 id="clear-library-title">Clear your library?</h2>
+  <p>Remove all saved songs from this browser? Your original files will stay on your device.</p>
+  <div class="import-actions">
+    <button id="cancel-clear-library" class="tbtn" type="button" autofocus>Cancel</button>
+    <button id="confirm-clear-library" class="tbtn" type="button">Clear library</button>
+  </div>
+</dialog>
 
 <dialog id="asset-info" aria-labelledby="asset-info-title">
   <div class="info-heading">
@@ -108,6 +133,7 @@
 </dialog>
 
 <script src="/js/info.js"></script>
+<script src="/js/library.js"></script>
 <script src="/vendor/alphatab/alphaTab.min.js"></script>
 <script src="/js/explorer.js"></script>
 <script src="/js/conductor.js"></script>

@@ -260,23 +260,29 @@
    * Failures — network, HTTP, or parse — all land on the overlay so the user
    * sees why the score didn't change.
    *
-   * @param {{name: string, path: string}} file - API file entry to load.
+   * @param {{name: string, path: string, local?: boolean}} file - library or hosted song.
    * @returns {Promise<void>} resolves once loading has been handed off.
    */
   async function loadFile(file) {
     overlay("Loading " + file.name + " …");
     try {
-      let url = "/api/file?path=" + encodeURIComponent(file.path);
-      if (window.GuitarzStatic) {
-        const parts = file.path.split("/");
-        if (parts.some((part) => !part || part === "." || part === ".." || part.includes("\\"))) {
-          throw new Error("invalid song path");
+      let buf;
+      if (file.local) {
+        const blob = await Guitarz.library.read(file.path);
+        buf = await blob.arrayBuffer();
+      } else {
+        let url = "/api/file?path=" + encodeURIComponent(file.path);
+        if (window.GuitarzStatic) {
+          const parts = file.path.split("/");
+          if (parts.some((part) => !part || part === "." || part === ".." || part.includes("\\"))) {
+            throw new Error("invalid song path");
+          }
+          url = "/songs/" + parts.map(encodeURIComponent).join("/");
         }
-        url = "/songs/" + parts.map(encodeURIComponent).join("/");
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("server returned " + res.status);
+        buf = await res.arrayBuffer();
       }
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("server returned " + res.status);
-      const buf = await res.arrayBuffer();
       if (!state.api.load(new Uint8Array(buf))) {
         throw new Error("unsupported or corrupt file");
       }

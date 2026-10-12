@@ -111,6 +111,27 @@ included in the export, with a link to the corresponding alphaTab source.
 Optional SoundFont credits appear when those fonts are available on the local
 server. See `static/licenses/README.md` for notice provenance and upgrade notes.
 
+### Your local song library
+
+Click **Open files** to import one or more Guitar Pro files, or **Open folder**
+to import a collection with its subfolders. Supported formats are `.gp`, `.gp3`,
+`.gp4`, `.gp5`, and `.gpx`; hidden and unsupported files are skipped. Folder
+selection is disabled in browsers that do not support it; file import still works.
+
+Songs are copied into IndexedDB on your device, with no uploads. **My library**
+restores across browser sessions at the same site address. Use the **Browse**
+selector to switch between your library and samples (or server files). Importing
+the same relative path replaces its saved copy, so reimport files to pick up
+changes to the originals. Standalone files are stored by filename; folder
+imports retain the selected folder's name and relative subfolders.
+
+The × beside a saved song removes its browser copy. **Clear library** removes
+all saved songs after confirmation. Both leave your originals untouched.
+Browser storage is specific to the browser profile and site origin; it does
+not sync between devices or domains. Clearing site data, private browsing, or
+browser storage eviction can remove saved copies. Keep the original files.
+Storage failures are reported, and failed import batches roll back atomically.
+
 ## Development
 
 This project is TDD: write the failing test first, then the code (see
